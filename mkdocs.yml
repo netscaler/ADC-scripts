@@ -11,7 +11,7 @@ markdown_extensions:
 
 
 pages:
-  - NetScaler Ansible Docs: index.md
+  - Home: index.md
   - User Documentation:
     - Getting Started: usage/getting-started.md
     - Speeding up execution: usage/speeding-up-execution.md
