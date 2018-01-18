@@ -1,0 +1,23 @@
+<footer>
+  {% if next_page or previous_page %}
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      {% if next_page %}
+        <a href="{{ next_page.url }}" class="btn btn-neutral float-right animated_button" title="{{ next_page.title }}"><i class="fa fa-long-arrow-right"></i></a>
+      {% endif %}
+      {% if previous_page %}
+        <a href="{{ previous_page.url }}" class="btn btn-neutral animated_button" title="{{ previous_page.title }}"><i class="fa fa-long-arrow-left"></i></a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+    {% if copyright %}
+      <p>{{ copyright }}</p>
+    {% endif %}
+  </div>
+
+  <p class="built-with">Built with testing <a href="http://www.mkdocs.org">MkDocs</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.</p>
+</footer>

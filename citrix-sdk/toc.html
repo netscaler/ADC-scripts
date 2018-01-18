@@ -1,0 +1,22 @@
+{% if nav_item.children %}
+    <li><span style="font-size: 16px;padding-left: 0px;">{{ nav_item.title }} <i class="faexp fa fa-angle-down" aria-hidden="true"></i></span></li>
+    <ul class="subnav" style="margin-left: 0px;padding-left:15px;border-left: 1px solid #b2b2b2;">
+        {% for nav_item in nav_item.children %}
+            {% include 'toc.html' %}
+        {% endfor %}
+    </ul>
+{% else %}
+    <li class="toctree-l1 {% if nav_item.active%}current{%endif%}">
+        <a class="toctree-l1-a {% if nav_item.active%}current{%endif%}" href="{{ nav_item.url }}">{{ nav_item.title }}</a>
+		{% if nav_item == current_page %}
+            <ul style="margin-left: 0px;padding-left:15px;border-left: 1px solid #b2b2b2;">
+            {% for toc_item in toc %}
+                <li class="toctree-l3"><a href="{{ toc_item.url }}" style="padding:0px;position: relative;">&nbsp;{{ toc_item.title }}</a></li>
+                {% for toc_item in toc_item.children %}
+                    <li><a class="toctree-l4" href="{{ toc_item.url }}" style="padding:0px;position: relative;">{{ toc_item.title }}</a></li>
+                {% endfor %}
+            {% endfor %}
+            </ul>
+        {% endif %}
+    </li>
+{% endif %}
