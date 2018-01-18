@@ -1,6 +1,6 @@
 # Direct NITRO API calls
 
-One method of configuring Netscaler consists of making direct NITRO API
+One method of configuring NetScaler consists of making direct NITRO API
 calls using Ansbile's [uri module](http://docs.ansible.com/ansible/latest/uri_module.html).
 
 This method tends to be quite verbose since setting up even basic
@@ -17,7 +17,7 @@ indeed a failure or expected.
 An example of that would be trying to add a resource while it exists.
 This is will result in failure since the HTTP POST request will not
 create the resource but this does not mean the configuration of
-Netscaler is necessarily invalid.
+NetScaler is necessarily invalid.
 
 Using Ansible's conditional constructs we can work around this problem
 in most cases but this adds to the verbosity and complexity of the
@@ -42,7 +42,7 @@ On any other outcome, an error that was not what was expected, the play
 fails.
 
 The final task is to save the running configuration to ensure that a
-reboot of Netscaler will not undo the changes we have made.
+reboot of NetScaler will not undo the changes we have made.
 
 ## Playbook
 

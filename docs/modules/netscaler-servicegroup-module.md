@@ -1,11 +1,11 @@
-# netscaler\_servicegroup - Manage service group configuration in Netscaler
+# netscaler\_servicegroup - Manage service group configuration in NetScaler
 
 New in Ansible 2.4
 
 
 ## Synopsis
 
-* Manage service group configuration in Netscaler.
+* Manage service group configuration in NetScaler.
 * This module is intended to run either on the ansible  control node or a bastion (jumpserver) with access to the actual netscaler instance.
 
 
@@ -171,7 +171,7 @@ New in Ansible 2.4
 <td>no</td>
 <td>310</td>
 <td></td>
-<td><div>Time in seconds until a timeout error is thrown when establishing a new session with Netscaler</div></td></tr>
+<td><div>Time in seconds until a timeout error is thrown when establishing a new session with NetScaler</div></td></tr>
 <tr><td>nitro_user<br/><div style="font-size: small;"></div></td>
 <td>yes</td>
 <td></td>

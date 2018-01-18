@@ -47,7 +47,7 @@ New in Ansible 2.4.0
 <td>no</td>
 <td>310</td>
 <td></td>
-<td><div>Time in seconds until a timeout error is thrown when establishing a new session with Netscaler</div></td></tr>
+<td><div>Time in seconds until a timeout error is thrown when establishing a new session with NetScaler</div></td></tr>
 <tr><td>nitro_user<br/><div style="font-size: small;"></div></td>
 <td>yes</td>
 <td></td>

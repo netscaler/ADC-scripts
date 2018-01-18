@@ -1,7 +1,7 @@
 # Templating the configuration file
 
-One method of configuring Netscaler consists of editing the ns.conf file
-directly and then rebooting Netscaler for the configuration changes to
+One method of configuring NetScaler consists of editing the ns.conf file
+directly and then rebooting NetScaler for the configuration changes to
 take effect.
 
 After the reboot the saved configuration becomes the running
@@ -16,11 +16,11 @@ The Jinja2 template is populated from configuration variables which can
 be defined with various methods, inside the playbook, in an inventory
 file or loaded from inventory files.
 
-We then upload the resulting ns.conf to the Netscaler node which alters
+We then upload the resulting ns.conf to the NetScaler node which alters
 the saved configuration.
 
 For the saved configuration to become running configuration we need to
-reboot Netscaler. Doing a warm reboot is recommended since it is
+reboot NetScaler. Doing a warm reboot is recommended since it is
 sufficient to reload the configuration and also avoid the greater
 downtime a cold reboot would induce.
 
@@ -31,7 +31,7 @@ have been succesfully applied.
 There is an assortment of playbooks on this [github repository](https://github.com/citrix/ansible-nitro-api-calls) which
 contains sample playbooks that perform fundamental NITRO operations. The
 tasks within each playbook can be combined into a larger playbook which
-accomplishes a full Netscaler configuration.
+accomplishes a full NetScaler configuration.
 
 In fact this is how the following example was constructed.
 
@@ -44,7 +44,7 @@ files can be found [here](https://github.com/citrix/netscaler-rolling-updates-ex
 ### Processing the template
 
 First we have a Jinja template file to produce the desired ns.conf. It
-is recommended to use an actual ns.conf file from the target Netscaler
+is recommended to use an actual ns.conf file from the target NetScaler
 node as a starting point for the template.
 
 The full file is quite long but the interesting parts are shown below.
@@ -145,7 +145,7 @@ configuration dictionary is defined.
 
 ### Upload the new ns.conf
 
-Having produced the ns.conf file we need to upload it to Netscaler.
+Having produced the ns.conf file we need to upload it to NetScaler.
 
 Following are the tasks that accomplish this.
 
@@ -183,18 +183,18 @@ Notice that we need to delete the existing file before copying the new
 one. Trying to upload a file to an existing file path will result in a
 NITRO error.
 
-### Rebooting Netscaler
+### Rebooting NetScaler
 
-The last step is to warm reboot the Netscaler node. Replacing the
+The last step is to warm reboot the NetScaler node. Replacing the
 ns.conf file overwrites the saved configuration. The running
-configuration of Netscaler remains unaffected. To force Netscaler to
+configuration of NetScaler remains unaffected. To force NetScaler to
 apply the saved configuration we need to reboot it. We have the option
 do a warm reboot which results in less downtime than a full reboot.
 
 The task that accomplishes this is shown below.
 
 ```yaml
-- name: Reboot Netscaler
+- name: Reboot NetScaler
   delegate_to: localhost
   uri:
     url: "http://{{ nsip }}/nitro/v1/config/reboot"
@@ -212,16 +212,16 @@ The task that accomplishes this is shown below.
 ### Final points
 
 The user needs for this example to set the variables needed for
-authentication and communication with Netscaler. Namely `nsip`,
+authentication and communication with NetScaler. Namely `nsip`,
 `nitro_user`, `nitro_pass`. These variables retain the meaning they have
-in the Netscaler specific Ansible modules.
+in the NetScaler specific Ansible modules.
 
 All tasks are run with the `delegate_to: localhost` option set. This is
-needed since we are making NITRO API calls to the Netscaler node. We do
+needed since we are making NITRO API calls to the NetScaler node. We do
 not want to connect directly with SSH to it.
 
 In some deployments the delegated host may need to be the bastion node
-that has actual NITRO access to the Netscaler node.
+that has actual NITRO access to the NetScaler node.
 
 ## References
 

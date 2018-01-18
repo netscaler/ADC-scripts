@@ -1,12 +1,12 @@
-# netscaler\_service - Manage service configuration in Netscaler
+# netscaler\_service - Manage service configuration in NetScaler
 
 New in Ansible 2.4.0
 
 
 ## Synopsis
 
-* Manage service configuration in Netscaler.
-* This module allows the creation, deletion and modification of Netscaler services.
+* Manage service configuration in NetScaler.
+* This module allows the creation, deletion and modification of NetScaler services.
 * This module is intended to run either on the ansible  control node or a bastion (jumpserver) with access to the actual netscaler instance.
 * This module supports check mode.
 
@@ -213,7 +213,7 @@ New in Ansible 2.4.0
 <td>no</td>
 <td>310</td>
 <td></td>
-<td><div>Time in seconds until a timeout error is thrown when establishing a new session with Netscaler</div></td></tr>
+<td><div>Time in seconds until a timeout error is thrown when establishing a new session with NetScaler</div></td></tr>
 <tr><td>nitro_user<br/><div style="font-size: small;"></div></td>
 <td>yes</td>
 <td></td>

@@ -1,4 +1,4 @@
-# Netscaler ansible docker image
+# NetScaler ansible docker image
 
 To make the running of netscaler ansible modules easier a ready
 to run image exists which does not require

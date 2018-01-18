@@ -1,14 +1,14 @@
-# netscaler\_nitro\_request - Issue Nitro API requests to a Netscaler instance.
+# netscaler\_nitro\_request - Issue Nitro API requests to a NetScaler instance.
 
 New in Ansible 2.5.0
 
 
 ## Synopsis
 
-* Issue Nitro API requests to a Netscaler instance.
+* Issue Nitro API requests to a NetScaler instance.
 * This is intended to be a short hand for using the uri Ansible module to issue the raw HTTP requests directly.
 * It provides consistent return values and has no other dependencies apart from the base Ansible runtime environment.
-* This module is intended to run either on the Ansible control node or a bastion (jumpserver) with access to the actual Netscaler instance
+* This module is intended to run either on the Ansible control node or a bastion (jumpserver) with access to the actual NetScaler instance
 
 
 
@@ -51,17 +51,17 @@ New in Ansible 2.5.0
 <td>no</td>
 <td></td>
 <td></td>
-<td><div>The id of the target Netscaler instance when issuing a Nitro request through a MAS proxy.</div></td></tr>
+<td><div>The id of the target NetScaler instance when issuing a Nitro request through a MAS proxy.</div></td></tr>
 <tr><td>instance_ip<br/><div style="font-size: small;"></div></td>
 <td>no</td>
 <td></td>
 <td></td>
-<td><div>The IP address of the target Netscaler instance when issuing a Nitro request through a MAS proxy.</div></td></tr>
+<td><div>The IP address of the target NetScaler instance when issuing a Nitro request through a MAS proxy.</div></td></tr>
 <tr><td>instance_name<br/><div style="font-size: small;"></div></td>
 <td>no</td>
 <td></td>
 <td></td>
-<td><div>The name of the target Netscaler instance when issuing a Nitro request through a MAS proxy.</div></td></tr>
+<td><div>The name of the target NetScaler instance when issuing a Nitro request through a MAS proxy.</div></td></tr>
 <tr><td>name<br/><div style="font-size: small;"></div></td>
 <td>no</td>
 <td></td>
@@ -76,7 +76,7 @@ New in Ansible 2.5.0
 <td>yes</td>
 <td></td>
 <td></td>
-<td><div>The password with which to authenticate to the Netscaler node.</div></td></tr>
+<td><div>The password with which to authenticate to the NetScaler node.</div></td></tr>
 <tr><td>nitro_protocol<br/><div style="font-size: small;"></div></td>
 <td>no</td>
 <td>http</td>
@@ -86,12 +86,12 @@ New in Ansible 2.5.0
 <td>yes</td>
 <td></td>
 <td></td>
-<td><div>The username with which to authenticate to the Netscaler node.</div></td></tr>
+<td><div>The username with which to authenticate to the NetScaler node.</div></td></tr>
 <tr><td>nsip<br/><div style="font-size: small;"></div></td>
 <td>no</td>
 <td></td>
 <td></td>
-<td><div>The IP address of the Netscaler or MAS instance where the Nitro API calls will be made.</div><div>The port can be specified with the colon <code>:</code>. E.g. <code>192.168.1.1:555</code>.</div></td></tr>
+<td><div>The IP address of the NetScaler or MAS instance where the Nitro API calls will be made.</div><div>The port can be specified with the colon <code>:</code>. E.g. <code>192.168.1.1:555</code>.</div></td></tr>
 <tr><td>operation<br/><div style="font-size: small;"></div></td>
 <td>no</td>
 <td></td>
@@ -201,8 +201,8 @@ New in Ansible 2.5.0
 
 # Doing a NITRO request through MAS.
 # Requires to have an authentication token from the mas_login and used as the nitro_auth_token parameter
-# Also nsip is the MAS address and the target Netscaler IP must be defined with instance_ip
-# The rest of the task arguments remain the same as when issuing the NITRO request directly to a Netscaler instance.
+# Also nsip is the MAS address and the target NetScaler IP must be defined with instance_ip
+# The rest of the task arguments remain the same as when issuing the NITRO request directly to a NetScaler instance.
 
 - name: Do mas login
   delegate_to: localhost

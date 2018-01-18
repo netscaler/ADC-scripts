@@ -1,6 +1,6 @@
-# Citrix Netscaler Ansible Module Documentation
+# Citrix NetScaler Ansible Module Documentation
 
-This project implements a set of Ansible modules for the Citrix Netscaler. Users of these modules can create, edit, update, and delete configuration objects on a Netscaler. For more information on the basic principals that the modules use, see the usage/index.
+This project implements a set of Ansible modules for the Citrix NetScaler. Users of these modules can create, edit, update, and delete configuration objects on a NetScaler. For more information on the basic principals that the modules use, see the usage/index.
 
 The code is licensed under the GPL and the authoritative repository is on github
 
@@ -26,7 +26,7 @@ The main documentation for the modules is organized into several sections listed
     * Initializing the testbed
     * Upgrade process
     * References
-* [Netscaler ansible docker image](./usage/docker-image.md)
+* [NetScaler ansible docker image](./usage/docker-image.md)
     * Installation
     * Usage
     * Example

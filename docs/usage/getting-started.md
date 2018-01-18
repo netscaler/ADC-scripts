@@ -1,6 +1,6 @@
 # Getting Started
 
-This document will show you how to begin using the Netscaler Ansible modules.
+This document will show you how to begin using the NetScaler Ansible modules.
 
 First, obtain [Python 2.7](http://www.python.org/) and [Ansible](http://docs.ansible.com/ansible/intro_installation.html) if you do not already have them.
 
@@ -48,7 +48,7 @@ ansible --version
 
 ## Installing Modules
 
-To install the latest version of the Netscaler modules run the following commands
+To install the latest version of the NetScaler modules run the following commands
 
 ```bash
 git clone https://github.com/citrix/netscaler-ansible-modules

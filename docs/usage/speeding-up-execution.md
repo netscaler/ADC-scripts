@@ -1,7 +1,7 @@
 # Speeding up execution
 
 This document details how to speed up the execution time of a playbook
-containing invocations of Netscaler ansible modules.
+containing invocations of NetScaler ansible modules.
 
 Ansible has some options to help with speeding up execution by making
 forks of itself to execute playbooks in multiple target hosts.
@@ -11,23 +11,23 @@ may help with parallelizing the execution of the tasks therein but at
 the cost of increased complexity.
 
 Both of the above methods can be used to speed up the execution of
-playbooks containing invocations of Netscaler modules.
+playbooks containing invocations of NetScaler modules.
 
-Here we will detail a third option which is specific to the Netscaler
+Here we will detail a third option which is specific to the NetScaler
 modules and the way the underlying API is used.
 
 ## Saving configuration
 
-By default every Netscaler module after it performs any changes to the configuration
-of the Netscaler node will also save the configuration.
+By default every NetScaler module after it performs any changes to the configuration
+of the NetScaler node will also save the configuration.
 
 While this is the safest option as far as robustness is concerned, it turns out that the save configuration operation
 is quite costly time wise, taking up to 5 seconds.
 
-When multiple tasks within a playbook make changes to Netscaler entities these
+When multiple tasks within a playbook make changes to NetScaler entities these
 delays accumulate to a substantial amount.
 
-The solution is to instruct the Netscaler modules not to save the configuration
+The solution is to instruct the NetScaler modules not to save the configuration
 individually but instead notify a handler which will save the configuration once
 at the end of the playbook execution.
 
@@ -99,7 +99,7 @@ since by default it is set to ``yes``.
 
 Also we call the ``netscaler_save_config`` module only once in the handlers section.
 
-The number of times the configuration will be saved on the Netscaler module is
+The number of times the configuration will be saved on the NetScaler module is
 only one regardless of the number of changes, or none if there is no change recorded
 in the result of any of the netscaler modules.
 
@@ -109,7 +109,7 @@ save the configuration twice if both server modules made changes.
 It is also just as fast as the best case with the default ``save_config`` option which would be
 to save the configuration once in case only one of the tasks made any change.
 
-Also note that the potential benefit increases, for each Netscaler module which utilizes the
-save configuration handler. For example if we had ten Netscaler modules making changes we would
+Also note that the potential benefit increases, for each NetScaler module which utilizes the
+save configuration handler. For example if we had ten NetScaler modules making changes we would
 be saving the configuration ten times. Instead if these modules use the ``netscaler_save_config``
 as a handler we will have only one call to the save operation.

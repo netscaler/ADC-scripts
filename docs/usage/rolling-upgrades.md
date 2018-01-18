@@ -8,7 +8,7 @@ networking setups.
 
 ## Setup
 
-The example utilizes Netscaler CPX and docker images.
+The example utilizes NetScaler CPX and docker images.
 
 The dependencies needed to run the playbooks are at
 the following [github repository](https://github.com/citrix/netscaler-rolling-updates-example)
@@ -37,7 +37,7 @@ This will initialize the testbed to the topology shown below.
 
 ## Testbed
 
-The testbed is comprised of a Netscaler CPX load balancer and 2 docker containers
+The testbed is comprised of a NetScaler CPX load balancer and 2 docker containers
 that act as the backend servers for the load balanced service.
 
 The logical diagram of the testbed is as follows
@@ -150,7 +150,7 @@ The function of the pre_tasks and post_tasks hooks is documented by
 `ansible <https://docs.ansible.com/ansible/playbooks_roles.html>`_.
 
 
-Essentially what we do is that we disable the server entity in Netscaler
+Essentially what we do is that we disable the server entity in NetScaler
 for each web service before the update process and after the update we
 re enable the server entity.
 
@@ -201,16 +201,16 @@ Had we not disabled the corresponding server, in this case, would
 mean that a number of requests would be directed to the offline
 server resulting in clients getting error responses.
 
-Eventually the monitors attached to the Netscaler services would
+Eventually the monitors attached to the NetScaler services would
 take the disrupted service out of the load balancing pool
 but depending on the traffic volume several requests would have
 been affected by the non functioning service by that time.
 
 Disabling the server before the update process guarantees that
-Netscaler will not direct any traffic to it during that time,
+NetScaler will not direct any traffic to it during that time,
 ensuring continuous delivery of the content.
 
 ## References
 
-* [Netscaler ansible modules repository](https://github.com/citrix/netscaler-ansible-modules)
+* [NetScaler ansible modules repository](https://github.com/citrix/netscaler-ansible-modules)
 * [Ansible documentation](https://docs.ansible.com/ansible/index.html)
