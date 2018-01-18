@@ -1,5 +1,5 @@
-site_name: Citrix NetScaler Ansible Docs
-site_description: Documentation for Citrix NetScaler Ansible 0.1
+site_name: Citrix NetScaler Ansible Module Documentation
+site_description: Documentation for Citrix NetScaler Ansible Modules 0.1
 theme_dir: citrix-sdk
 markdown_extensions:
   - admonition
