@@ -2,6 +2,7 @@
 site_name: Citrix NetScaler Ansible Module Documentation
 site_title: Developer Docs
 site_description: Documentation for Citrix NetScaler Ansible Modules 0.1
+site_url: https://developer-docs.citrix.com
 
 # Copyright
 copyright: 'Copyright &copy; 1999-2019 Citrix Systems, Inc. All rights reserved. '
@@ -84,4 +85,4 @@ nav:
     - netscaler_servicegroup: modules/netscaler-servicegroup-module.md
     - netscaler_ssl_certkey: modules/netscaler-ssl-certkey-module.md
   - Developer Documentation: development-utilities.md
-
+  - Questions?: https://discussions.citrix.com/forum/1385-citrix-developer-exchange/
