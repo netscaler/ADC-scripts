@@ -6,7 +6,7 @@ site_url: https://developer-docs.citrix.com
 
 # Feedback
 
-issues_uri: https://github.com/citrix/netscaler-ansible-docs/issues/new
+issues_uri: https://github.com/citrix/devdocs-issue-collector/issues/new
 assignees_uri:
   - ajitchelat
 labels_uri:
