@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+
+# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Use of this software is governed by the license terms, if any,
+# which accompany or are included with this software.
+
+$ENV{PATH} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin'.$ENV{PATH};
+
+use File::Basename;
+
+my $number_args = $#ARGV + 1;
+if ($number_args != 1) {
+    print "Usage: check_invalid_config <ns_config_file>\n";
+    exit;
+}
+
+my $config_file = $ARGV[0];
+if (not -e $config_file) {
+    print "No such file: $config_file\n";
+    exit;
+}
+
+my($filename, $dir_path) = fileparse($config_file);
+
+my $exit_status = system("python2 /netscaler/nspepi2/config_check_main.py -f $config_file");
+if ($exit_status != 0) {
+	print "Error in checking config file: $exit_status";
+	exit;
+}
+my $invalid_config_file = $dir_path."/issues_".$filename;
+
+# Checks whether any command is present in the file
+if (!(-z $invalid_config_file)) {
+	print "\nThe following configuration lines will get errors in 13.1 and both they and dependent configuration will be removed from the configuration:\n";
+	system("cat $invalid_config_file");
+	print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html. Use the latest tool version for the most complete and up-to-date version.\n";
+} else {
+	print "\nNo issue detected with the configuration.\n";
+}
+### End check_invalid_config script

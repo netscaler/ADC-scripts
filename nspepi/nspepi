@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Use of this software is governed by the license terms, if any,
+# which accompany or are included with this software.
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+exec $DIR/nspepi2/nspepi_main.py "$@"

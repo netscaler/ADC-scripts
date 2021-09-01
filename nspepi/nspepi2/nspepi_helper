@@ -1,0 +1,1075 @@
+#!/usr/bin/perl -w
+
+# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Use of this software is governed by the license terms, if any,
+# which accompany or are included with this software.
+
+# Warnings
+#
+# The tool will not optimize the configuration instead it will create equivalents only.
+#
+# The upgraded command might have more than 8191 chars based on the
+# length of the classic command. These commands will fail while adding
+# on ADC
+#
+# For better performance and to take full advantage of advanced syntax,
+# manually we have to optimize after conversion.
+
+use POSIX;
+use Switch;
+use Getopt::Std;
+use strict;
+use List::Util qw[min max];
+
+# CFILE - Input file
+# LFILE - File containing converted commands
+# WFILE - Warning file
+
+my (
+    $classic,
+    $advanced,
+    $hash_key,
+    $hash_value,
+    $line,
+    $lineno,
+    $expression,
+    @expressions,
+    $expr_type,
+    $file,
+    %options,
+    $expr_params,
+    $q_start,
+    $q_end,
+    @nsconf,
+    $key,
+    $value,
+    @maxlen_warn,
+    $CFILE,
+    $LFILE,
+    $WFILE,
+    $ncfg,
+    $tmpcfg,
+    $wf,
+    $tmp,
+    $expr_converted
+);
+
+my $ERR_BLOCKED_MSG    = "Expression is in blocked list of conversion";
+my $ERR_SYNTAX_MSG     = "Expression is not in proper syntax";
+my $ERR_SUPPORT_MSG    = "Expression is not supported";
+my $ERR_OPERATOR_MSG   = "Operator used in expression is not supported";
+my $ERR_DATE_MSG       = "Date format is invaild";
+
+# List of classic expressions that are convertable
+my %EXPR_LIST=(
+    "REQ.HTTP.HEADER "                      ,       'Type=1;expr=HTTP.REQ.HEADER("$")',
+    "RES.HTTP.HEADER "                      ,       'Type=1;expr=HTTP.RES.HEADER("$")',
+    "HEADER "                               ,       'Type=1;expr=HTTP.REQ.HEADER("$")',
+    "RES.HTTP.STATUSCODE "                  ,       'Type=3;expr=HTTP.RES.STATUS',
+    "STATUSCODE "                           ,       'Type=3;expr=HTTP.RES.STATUS',
+    "REQ.HTTP.URLQUERYLEN "                 ,       'Type=5;expr=HTTP.REQ.URL.QUERY.LENGTH.GT($)',
+    "URLQUERYLEN "                          ,       'Type=5;expr=HTTP.REQ.URL.QUERY.LENGTH.GT($)',
+    "REQ.HTTP.URLQUERY "                    ,       'Type=2;expr=HTTP.REQ.URL.QUERY',
+    "URLQUERY "                             ,       'Type=2;expr=HTTP.REQ.URL.QUERY',
+    "REQ.HTTP.URLLEN "                      ,       'Type=5;expr=HTTP.REQ.URL.LENGTH.GT($)',
+    "URLLEN "                               ,       'Type=5;expr=HTTP.REQ.URL.LENGTH.GT($)',
+    "REQ.HTTP.URL "                         ,       'Type=7;expr=HTTP.REQ.URL',
+    "URL "                                  ,       'Type=7;expr=HTTP.REQ.URL',
+    "REQ.HTTP.METHOD "                      ,       'Type=4;expr=HTTP.REQ.METHOD.EQ($)',
+    "METHOD "                               ,       'Type=4;expr=HTTP.REQ.METHOD.EQ($)',
+    "LOCATION "                             ,       'Type=4;expr=CLIENT.IP.SRC.MATCHES_LOCATION("$")',
+    "REQ.HTTP.VERSION "                     ,       'Type=2;expr=HTTP.REQ.VERSION',
+    "VERSION "                              ,       'Type=2;expr=HTTP.REQ.VERSION',
+    "RES.HTTP.VERSION "                     ,       'Type=2;expr=HTTP.RES.VERSION',
+    "REQ.SSL.CLIENT.CERT.SERIALNUMBER "     ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.SERIALNUMBER',
+    "CLIENT.CERT.SERIALNUMBER "             ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.SERIALNUMBER',
+    "REQ.SSL.CLIENT.CERT.SUBJECT "          ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.SUBJECT',
+    "CLIENT.CERT.SUBJECT "                  ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.SUBJECT',
+    "REQ.SSL.CLIENT.CIPHER.BITS "           ,       'Type=3;expr=CLIENT.SSL.CIPHER_BITS',
+    "CLIENT.CIPHER.BITS "                   ,       'Type=3;expr=CLIENT.SSL.CIPHER_BITS',
+    "REQ.SSL.CLIENT.CERT.ISSUER "           ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.ISSUER',
+    "CLIENT.CERT.ISSUER "                   ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.ISSUER',
+    "REQ.SSL.CLIENT.SSL.VERSION "           ,       'Type=3;expr=CLIENT.SSL.VERSION',
+    "CLIENT.SSL.VERSION "                   ,       'Type=3;expr=CLIENT.SSL.VERSION',
+    "REQ.SSL.CLIENT.CERT.SIGALGO "          ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.SIGNATURE_ALGORITHM',
+    "CLIENT.CERT.SIGALGO "                  ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT.SIGNATURE_ALGORITHM',
+    "REQ.SSL.CLIENT.CERT "                  ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT',
+    "CLIENT.CERT "                          ,       'Type=2;expr=CLIENT.SSL.CLIENT_CERT',
+    "REQ.SSL.CLIENT.CERT.VERSION "          ,       'Type=3;expr=CLIENT.SSL.CLIENT_CERT.VERSION',
+    "CLIENT.CERT.VERSION "                  ,       'Type=3;expr=CLIENT.SSL.CLIENT_CERT.VERSION',
+    "REQ.SSL.CLIENT.CIPHER.TYPE == Export"  ,       'Type=13;expr=CLIENT.SSL.CIPHER_EXPORTABLE',
+    "REQ.SSL.CLIENT.CIPHER.TYPE != Export"  ,       'Type=13;expr=CLIENT.SSL.CIPHER_EXPORTABLE.NOT',
+    "REQ.SSL.CLIENT.CERT.VALIDFROM "        ,       'Type=12;expr=CLIENT.SSL.CLIENT_CERT.VALID_NOT_BEFORE',
+    "REQ.SSL.CLIENT.CERT.VALIDTO "          ,       'Type=12;expr=CLIENT.SSL.CLIENT_CERT.VALID_NOT_AFTER',
+    "REQ.IP.DESTIP "                        ,       'Type=6;expr=CLIENT.IP.DST',
+    "DESTIP "                               ,       'Type=6;expr=CLIENT.IP.DST',
+    "REQ.IP.SOURCEIP "                      ,       'Type=6;expr=CLIENT.IP.SRC',
+    "SOURCEIP "                             ,       'Type=6;expr=CLIENT.IP.SRC',
+    "RES.IP.DESTIP "                        ,       'Type=6;expr=SERVER.IP.DST',
+    "RES.IP.SOURCEIP "                      ,       'Type=6;expr=SERVER.IP.SRC',
+    "MSS "                                  ,       'Type=3;expr=CLIENT.TCP.MSS',
+    "REQ.ETHER.DESTMAC "                    ,       'Type=8;expr=CLIENT.ETHER.DSTMAC',
+    "DESTMAC "                              ,       'Type=8;expr=CLIENT.ETHER.DSTMAC',
+    "REQ.ETHER.SOURCEMAC "                  ,       'Type=8;expr=CLIENT.ETHER.SRCMAC',
+    "SOURCEMAC "                            ,       'Type=8;expr=CLIENT.ETHER.SRCMAC',
+    "RES.ETHER.DESTMAC "                    ,       'Type=8;expr=SERVER.ETHER.DSTMAC',
+    "RES.ETHER.SOURCEMAC "                  ,       'Type=8;expr=SERVER.ETHER.SRCMAC',
+    "REQ.INTERFACE.DESTMAC "                ,       'Type=8;expr=CLIENT.ETHER.DSTMAC',
+    "REQ.INTERFACE.SOURCEMAC "              ,       'Type=8;expr=CLIENT.ETHER.SRCMAC',
+    "RES.INTERFACE.DESTMAC "                ,       'Type=8;expr=SERVER.ETHER.DSTMAC',
+    "RES.INTERFACE.SOURCEMAC "              ,       'Type=8;expr=SERVER.ETHER.SRCMAC',
+    "REQ.TCP.MSS "                          ,       'Type=3;expr=CLIENT.TCP.MSS',
+    "REQ.TCP.DESTPORT "                     ,       'Type=14;expr=CLIENT.TCP.DSTPORT',
+    "DESTPORT "                             ,       'Type=14;expr=CLIENT.TCP.DSTPORT',
+    "REQ.TCP.SOURCEPORT "                   ,       'Type=14;expr=CLIENT.TCP.SRCPORT',
+    "SOURCEPORT "                           ,       'Type=14;expr=CLIENT.TCP.SRCPORT',
+    "RES.TCP.MSS "                          ,       'Type=3;expr=SERVER.TCP.MSS',
+    "RES.TCP.DESTPORT "                     ,       'Type=14;expr=SERVER.TCP.DSTPORT',
+    "RES.TCP.SOURCEPORT "                   ,       'Type=14;expr=SERVER.TCP.SRCPORT',
+    "REQ.INTERFACE.ID "                     ,       'Type=2;expr=CLIENT.INTERFACE.ID',
+    "ID "                                   ,       'Type=2;expr=CLIENT.INTERFACE.ID',
+    "REQ.INTERFACE.RXTHROUGHPUT "           ,       'Type=3;expr=CLIENT.INTERFACE.RXTHROUGHPUT',
+    "RXTHROUGHPUT "                         ,       'Type=3;expr=CLIENT.INTERFACE.RXTHROUGHPUT',
+    "REQ.INTERFACE.TXTHROUGHPUT "           ,       'Type=3;expr=CLIENT.INTERFACE.TXTHROUGHPUT',
+    "TXTHROUGHPUT "                       ,       'Type=3;expr=CLIENT.INTERFACE.TXTHROUGHPUT',
+    "REQ.INTERFACE.RXTXTHROUGHPUT "         ,       'Type=3;expr=CLIENT.INTERFACE.RXTXTHROUGHPUT',
+    "RXTXTHROUGHPUT "                       ,       'Type=3;expr=CLIENT.INTERFACE.RXTXTHROUGHPUT',
+    "REQ.ETHER.ID "                         ,       'Type=2;expr=CLIENT.INTERFACE.ID',
+    "REQ.ETHER.RXTHROUGHPUT "               ,       'Type=3;expr=CLIENT.INTERFACE.RXTHROUGHPUT',
+    "REQ.ETHER.TXTHROUGHPUT "               ,       'Type=3;expr=CLIENT.INTERFACE.TXTHROUGHPUT',
+    "REQ.ETHER.RXTXTHROUGHPUT "             ,       'Type=3;expr=CLIENT.INTERFACE.RXTXTHROUGHPUT',
+    "REQ.VLANID "                           ,       'Type=3;expr=CLIENT.VLAN.ID',
+    "VLANID "                               ,       'Type=3;expr=CLIENT.VLAN.ID',
+    "RES.INTERFACE.ID "                     ,       'Type=2;expr=SERVER.INTERFACE.ID',
+    "RES.INTERFACE.RXTHROUGHPUT "           ,       'Type=3;expr=SERVER.INTERFACE.RXTHROUGHPUT',
+    "RES.INTERFACE.TXTHROUGHPUT "           ,       'Type=3;expr=SERVER.INTERFACE.TXTHROUGHPUT',
+    "RES.INTERFACE.RXTXTHROUGHPUT "         ,       'Type=3;expr=SERVER.INTERFACE.RXTXTHROUGHPUT',
+    "RES.ETHER.ID "                         ,       'Type=2;expr=SERVER.INTERFACE.ID',
+    "RES.ETHER.RXTHROUGHPUT "               ,       'Type=3;expr=SERVER.INTERFACE.RXTHROUGHPUT',
+    "RES.ETHER.TXTHROUGHPUT "               ,       'Type=3;expr=SERVER.INTERFACE.TXTHROUGHPUT',
+    "RES.ETHER.RXTXTHROUGHPUT "             ,       'Type=3;expr=SERVER.INTERFACE.RXTXTHROUGHPUT',
+    "RES.VLANID "                           ,       'Type=3;expr=SERVER.VLAN.ID',
+    "DAYOFWEEK "                            ,       'Type=9;expr=SYS.TIME.WEEKDAY',
+    "DATE "                                 ,       'Type=10;expr=SYS.TIME',
+    "TIME "                                 ,       'Type=11;expr=SYS.TIME',
+);
+
+# List of classic expressions that are not convertable
+my @BLOCKED_LIST=(
+    'CLIENT.APPLICATION',
+    'CLIENT.FILE',
+    'CLIENT.OS',
+    'CLIENT.REG',
+    'CLIENT.SVC',
+    'FS.COMMAND',
+    'FS.DIR',
+    'FS.DOMAIN',
+    'FS.FILE',
+    'FS.PATH',
+    'FS.SERVER',
+    'FS.SERVERIP',
+    'FS.SERVICE',
+    'FS.USER',
+    'f_5_TrendMicroOfficeScan_7_3',
+    'f_5_sygate_5_6',
+    'f_5_zonealarm_6_5',
+    's_5_norton',
+    's_farclient',
+    'v_5_McAfeevirusscan_11',
+    'v_5_Mcafee',
+    'v_5_Symantec_10',
+    'v_5_Symantec_6_0',
+    'v_5_Symantec_7_5',
+    'v_5_TrendMicroOfficeScan_7_3',
+    'v_5_TrendMicro_11_25',
+    'v_5_sophos_4',
+    'v_5_sophos_5',
+    'v_5_sophos_6',
+);
+
+# List of command to do the conversion
+my @CMD_LIST=(
+    "add policy expression (\\S+) (.+)",
+);
+
+# List of advanced expression
+my @ADVANCED_EXP_LIST=(
+	"AAA",
+	"ANALYTICS",
+	"CLIENT",
+	"CONNECTION",
+	"DIAMETER",
+	"DNS",
+	"FALSE",
+	"HTTP",
+	"ICA",
+	"MSSQL",
+	"MYSQL",
+	"ORACLE",
+	"RADIUS",
+	"SERVER",
+	"SIP",
+	"SMPP",
+	"SUBSCRIBER",
+	"SYS",
+	"TARGET",
+	"TEXT",
+	"TRUE",
+);
+
+# Subroutine for printing
+sub print_it(@) {
+    my $msg = $_[1];
+    print $msg;
+}
+
+# Main starts here
+getopts("e:", \%options) or usage();
+
+# If -e specified add dummy command to use the same code path to
+# convert
+$lineno = 0;
+$expression = $options{e};
+$line = qq/add policy expression test "$expression"/;
+$classic = $line;
+&convertExpression;
+
+if ($expr_converted == 0) {
+  print_it($LFILE,"INFO: Expression is not converted - most likely it is a valid advanced expression\n");
+}
+
+if ($#maxlen_warn >= 0) {
+  print_it($LFILE,"WARNING: Total number of warnings due to expressions length greater than 8191 characters: ".($#maxlen_warn+1)."\n");
+  print_it($LFILE,"WARNING: Line numbers which has more than 8191 characters length: ".join(', ',@maxlen_warn)."\n");
+}
+if (defined $LFILE) {
+  print_it($LFILE,"OUTPUT: New configuration file created: $ncfg\n");
+  print_it($LFILE,"OUTPUT: New warning file created: $wf\n");
+}
+if (defined $LFILE) {
+    close($LFILE);
+}
+if (defined $WFILE) {
+    close($WFILE);
+}
+
+exit(0);
+
+# Error handling
+sub err_handle
+{
+    print STDERR "ERROR: @_\n";
+}
+
+# Subroutine to replace the entity names like expressions
+sub intelligentReplacer
+{
+    my $input = $_[0];
+    my $find = "\Q$_[1]\E";
+    my $replace = $_[2];
+
+    # Check for the complex patterns
+    if ($input =~/(&&|\|\|)/) {
+        # Fix begining
+        $input =~ s/(test \"\s*[\(|!]*\s*)$find(\s*\)*\s*[&&|\|\|])/$1$replace$2/;
+        # Fix ending
+        $input =~ s/([&&|\|\|]\s*[\(|!]*\s*)$find(\s*\)*\s*\")$/$1$replace$2/;
+        # Fix middle
+        $input =~ s/([&&|\|\|]\s*[\(|!]*\s*)$find(\s*\)*\s*[&&|\|\|])/$1$replace$2/g;
+    }
+    else {
+        $input =~ s/$find/$replace/;
+    }
+    return $input;
+}
+# Main function to convert a single command
+sub convertExpression
+{
+
+    $expression= "";
+    $expr_type= "";
+    my $exp = "";
+    # Set it 1 here so that in case
+    # of error we don't log
+    # information message.
+    $expr_converted = 1;
+
+    # Extract the expression from command line. Print others as it is
+    if (!extractExpressions()) {
+        print_it($LFILE,"$line\n");
+        err_handle $ERR_SUPPORT_MSG;
+        return;
+    }
+    # Check for blocked expressions
+    foreach (@BLOCKED_LIST) {
+        if ($expression  =~ /$_/i) {
+            print_it($LFILE,"$line\n");
+            err_handle $ERR_BLOCKED_MSG;
+            return;
+        }
+    }
+    # Set it 0 after handling
+    # error cases, so that we
+    # log the message only if
+    # expression is not converted.
+    $expr_converted = 0;
+    #skip conversion advanced policies
+    foreach my $adv_cmd (@ADVANCED_EXP_LIST)
+    {
+        if ($expression =~ m/^["!\d(\s]*$adv_cmd/i) {
+		goto SKIP;
+        }
+    }
+    # Convert classic into advanced
+    foreach $exp (@expressions) {
+
+        foreach $hash_key (keys(%EXPR_LIST)) {
+            if ($exp =~ /^\((.*)\)$/s) {
+                $exp = $1;
+            }
+            if ($exp =~ /^$hash_key(.*)$/is) {
+                $expr_params = $1;
+                $hash_value = $EXPR_LIST{$hash_key};
+                $hash_value =~ /Type=(\d+);expr=(.+)/s;
+                $advanced = $2;
+                $expr_type = $1;
+                identifyExpressions();
+                $classic = intelligentReplacer($classic, $exp, $advanced);
+		$expr_converted = 1;
+
+            #Fix to Handle cases where arguments are not specified like REQ.IP.SOURCEIP
+            } elsif (uc($hash_key) eq (uc($exp) . " ")) {
+                  $hash_value = $EXPR_LIST{$hash_key};
+                  $hash_value =~ /Type=(\d+);expr=(.+)/s;
+                  $advanced = $2;
+                  $classic = intelligentReplacer($classic, $exp, $advanced);
+                  $expr_converted = 1;
+	    }
+        }
+    }
+SKIP:
+    if (length($classic) > 1100) {
+        my $dl = length($classic)-length($line);
+        if ($dl > 300) {
+            push @maxlen_warn, $lineno;
+      }
+  }
+  #Removing the dummy expression created for -e
+  $classic =~ s/^\badd\b\s*\bpolicy\b\s*\bexpression\b\s*\btest\b\s*//;
+  print_it($LFILE,"$classic\n");
+}
+
+sub trim($)
+{
+	my $text = shift;
+	$text =~ s/^\s+//;
+	$text =~ s/\s+$//;
+	return $text;
+}
+
+# Subroutine to remove the quotes
+sub removeQuote
+{
+    my ($qs, $qe);
+    my $text = $_[0];
+    $text = trim($text);
+
+    $qs = substr $text, 0, 1;
+    if ($qs =~ /q/) {
+        $qs = substr $text, 0, 2;
+        $qe = substr $text, 1,1;
+    }
+    elsif ($qs =~ /\\/) {
+        $qs = substr $text, 0, 2;
+        $qe = $qs;
+    }
+    elsif ($qs =~ /\(/) {
+        $qs="";
+        $qe="";
+    }
+    elsif ($qs =~ /\"/) {
+        $qe = $qs;
+    }
+    else {
+        $qs = "";
+        $qe = "";
+    }
+    $text = substr($text, length($qs));
+    $text = substr($text, 0,length($text)-length($qe));
+    $q_start = $qs;
+    return $text;
+}
+# Extract the individual classic expressions from the given command
+sub extractExpressions
+{
+    my $cmd;
+    my $exp;
+    my $tmp;
+    my $f = 0;
+    my $and = "&&";
+    my $or = "||";
+    @expressions = ();
+
+    # Process the command list
+    foreach $cmd (@CMD_LIST) {
+
+        if ($classic =~ /^$cmd$/is) {
+            $expression = $2;
+
+          $expression = removeQuote($expression);
+          $exp = $expression;
+          if ($exp =~ /($and|$or)/) {
+              if ($exp =~ /\(|!/) {
+                  $exp =~ s/^(\(|!)+//;
+                  $exp =~ s/\)+$//;
+                  $exp =~ s/\)+\s*$and/ $and/g;
+                  $exp =~ s/$and\s*(\(|!)+/$and /g;
+                  $exp =~ s/\)+\s*\Q$or\E/ $or/g;
+                  $exp =~ s/\Q$or\E\s*(\(|!)+/$or /g;
+              }
+          }
+          @expressions = split(/(\s*$and\s*|\s*\Q$or\E\s*)/,$exp);
+          @expressions = grep(!/(\s*$and\s*|\s*\Q$or\E\s*)/,@expressions);
+
+          foreach $exp (@expressions) {
+              $exp = trim($exp);
+          }
+
+          return 1;
+      }
+  }
+}
+
+# Subroutine to identify the type of the expressions
+sub identifyExpressions
+{
+    my $header_name="";
+    my $OPERATOR="";
+    my $ARG2="";
+    my $qu='"';
+
+    if ($q_start eq "\"") {
+        $qu = "\\\"";
+    }
+
+    switch($expr_type) {
+        #1) HTTP Header Based Expressions. Example: "REQ.HTTP.HEADER Accept-Language == en-us"
+        case 1 {
+            if ($expr_params =~ /^(\S+)(\s+.*)$/s) {
+                $header_name=$1;
+                $expr_params=$2;
+                $advanced =~ s/"\$"/$qu$header_name$qu/;
+                if ($expr_params =~ /^\s+(\S+)(\s*.*)$/s) {
+                    $OPERATOR=$1;
+                    $expr_params=$2;
+                    parseTextOperator($OPERATOR);
+                    return;
+                }
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #2) TEXT Based Expressions.
+        case 2 {
+            if ($expr_params =~ /^(\S+)(\s*.*)$/s) {
+                my $OPERATOR=$1;
+                $expr_params=$2;
+                parseTextOperator($OPERATOR);
+                return;
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #3) Number Based Expressions.
+        case 3 {
+            if ($expr_params =~ /^(\S+)\s+(\d+)(.*)$/s) {
+                my $operator=$1;
+                my $argument=$2;
+                $expr_params=$3;
+                parseNumericOperator($operator,$argument);
+                return;
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #4) TEXT  based substitution. Replace $.
+        case 4 {
+            if ($expr_params =~ /^(\S+)(\s*.*)$/s) {
+                my $OPERATOR=$1;
+                $expr_params=$2;
+                my $ARG = extractArgument();
+                if ($OPERATOR eq '==') {
+                    if ($advanced =~ /"\$"/) {
+                        $advanced =~ s/"\$"/$qu$ARG$qu/;
+                    }
+                    else {
+                        $advanced =~ s/\$/$ARG/;
+                    }
+                }
+                elsif ($OPERATOR eq '!=') {
+                    if ($advanced =~ /"\$"/) {
+                        $advanced =~ s/"\$"/$qu$ARG$qu/;
+                    }
+                    else {
+                        $advanced =~ s/\$/$ARG/;
+                    }
+                    $advanced = $advanced .'.NOT';
+                }
+                else {
+                    err_handle $ERR_OPERATOR_MSG;
+                    return;
+                }
+                return;
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #5) Number based substitution. Replace $.
+        case 5 {
+            if ($expr_params =~ /^>\s+(\d+)(.*)$/s) {
+                my $argument=$1;
+                $expr_params=$2;
+                $advanced =~ s/\$/$argument/;
+                return;
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #6) IP Based Expressions.
+        case 6 {
+            if ($expr_params =~ /^(\S\S)\s+(\d+\.\d+\.\d+.\d+)(.*)$/s) {
+                my $operator = $1;
+                my $ip_addr = $2;
+                $expr_params = $3;
+
+                #Check for netmask#
+                if ($expr_params =~ /^\s+-netmask\s+(\d+\.\d+\.\d+.\d+)(.*)$/is) {
+                    my $netmask = $1;
+                    $expr_params=$2;
+                    #Convert netmask for PI syntax.
+                    $netmask = parseNetmask($netmask);
+                    $advanced = $advanced.'.IN_SUBNET('.$ip_addr.'/'.$netmask.')';
+                }
+                else {
+                    $advanced = $advanced.'.EQ('.$ip_addr.')';
+                }
+                if ($operator eq '!=') {
+                    $advanced =$advanced.'.NOT';
+                }
+                elsif ($operator ne '==') {
+                    err_handle $ERR_OPERATOR_MSG;
+                    return;
+                }
+                return;
+            }
+            else {
+                err_handle $ERR_SUPPORT_MSG;
+                return;
+            }
+        }
+        #7) URL based Expression.This case is diferent because of * char. in argument.
+        case 7 {
+            if ($expr_params =~ /^(\S+)(\s*.*)$/s) {
+                my $OPERATOR=$1;
+                my $expression_temp=$expr_params=$2;
+
+                if (($OPERATOR ne '==') && ($OPERATOR ne '!=')) {
+                    parseTextOperator($OPERATOR);
+                    return;
+                }
+                else {
+                    my $ARG = extractArgument();
+                    if ($ARG !~ /\*/) {
+                        $expr_params=$expression_temp;
+                        parseTextOperator($OPERATOR);
+                        return;
+                    }
+                    $ARG =~ s/\./\\./;
+                    $ARG =~ s/\*/(.*)/g;
+                    $advanced = $advanced.'.REGEX_MATCH(re#'.$ARG.'#)';
+                    if ($OPERATOR eq '!=') {
+                        $advanced =$advanced.'.NOT';
+                    }
+                    return;
+                }
+            }
+            else {
+                err_handle $ERR_SUPPORT_MSG;
+                return;
+            }
+        }
+        #8) MAC Based Expressions.
+        case 8 {
+            my $mac_addr = q/[0-9a-fA-f]{2}:[0-9a-fA-f]{2}:[0-9a-fA-f]{2}:[0-9a-fA-f]{2}:[0-9a-fA-f]{2}:[0-9a-fA-f]{2}/;
+            if ($expr_params =~ /^(\S\S)\s+($mac_addr)(.*)$/s) {
+                my $operator = $1;
+                $mac_addr= $2;
+                $expr_params = $3;
+                $advanced = $advanced.'.EQ('.$mac_addr.')';
+
+                if ($operator eq '!=') {
+                    $advanced =$advanced.'.NOT';
+                }
+                elsif ($operator ne '==') {
+                    err_handle $ERR_OPERATOR_MSG;
+                    return;
+                }
+                return;
+            }
+            else {
+                err_handle $ERR_SUPPORT_MSG;
+                return;
+            }
+        }
+        #9) "DAYOFWEEK" Expression. Example:- "DAYOFWEEK == SUNDAYGMT"
+        case 9 {
+            if ($expr_params =~ /^(\S{1,2})\s+(.+)GMT(.*)$/is) {
+                my $operator = $1;
+                my $day= $2;
+                $expr_params = $3;
+                my %weekday = (Sunday => 0, Monday => 1, Tuesday => 2, Wednesday => 3, Thursday => 4, Friday => 5, Saturday => 6);
+                $day = ucfirst (lc $day);
+                $day = $weekday{$day};
+                if (!defined $day) {
+                    err_handle $ERR_DATE_MSG;
+                    return;
+                }
+                parseNumericOperator($operator,$day);
+            }
+            else {
+                err_handle $ERR_DATE_MSG;
+                return;
+            }
+        }
+        #10) "DATE" Expression. Example:- "DATE == '2010-05-24GMT'"
+        case 10 {
+            if ($expr_params =~ /^(\S+)(\s*.*)$/s) {
+                my $OPERATOR=$1;
+                $expr_params=$2;
+                my %month = (
+                    '01' => "Jan",
+                    '02' => "Feb",
+                    '03' => "Mar",
+                    '04' => "Apr",
+                    '05' => "May",
+                    '06' => "Jun",
+                    '07' => "Jul",
+                    '08' => "Aug",
+                    '09' => "Sep",
+                    '10' => "Oct",
+                    '11' => "Nov",
+                    '12' => "Dec"
+                );
+                my $ARG = extractArgument();
+
+                if (uc($OPERATOR) eq "BETWEEN") {
+                    if ($ARG =~ /^(\d{4})-(\d{2})-(\d{2})(\S{3})-(\d{4})-(\d{2})-(\d{2})(\S{3})$/) {
+                        $ARG = "$4 $1 $month{$2} $3";
+                        $ARG2 = "$8 $5 $month{$6} $7";
+                        $advanced = $advanced . ".BETWEEN($ARG,$ARG2)";
+                        return;
+                    }
+                    else {
+                        err_handle $ERR_DATE_MSG;
+                        return;
+                    }
+                }
+                else {
+                    if ($ARG =~ /^(\d{4})-(\d{2})-(\d{2})(\S{3})$/) {
+                            $ARG = "$4 $1 $month{$2} $3";
+                            parseNumericOperator($OPERATOR,$ARG);
+                            return;
+                    }
+                    else {
+                        err_handle $ERR_OPERATOR_MSG;
+                        return;
+                    }
+                }
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+
+        #11) "TIME" Expression. Example:- "TIME != \'2010-05-26-13:31:37GMT\'"
+        case 11 {
+            if ($expr_params =~ /^(\S+)(\s*.*)$/s) {
+                my $OPERATOR=$1;
+                $expr_params=$2;
+                my %month = (
+                    '01' => "Jan",
+                    '02' => "Feb",
+                    '03' => "Mar",
+                    '04' => "Apr",
+                    '05' => "May",
+                    '06' => "Jun",
+                    '07' => "Jul",
+                    '08' => "Aug",
+                    '09' => "Sep",
+                    '10' => "Oct",
+                    '11' => "Nov",
+                    '12' => "Dec"
+                );
+                my $ARG = extractArgument();
+                if (uc($OPERATOR) eq "BETWEEN") {
+                    if ($ARG =~ /^(\d{4})-(\d{2})-(\d{2})-(\d{2}):(\d{2}):(\d{2})(\S{3})-(\d{4})-(\d{2})-(\d{2})-(\d{2}):(\d{2}):(\d{2})(\S{3})$/) {
+                        $ARG = "$7 $1 $month{$2} $3 $4h $5m $6s";
+                        $ARG2 = "$14 $8 $month{$9} $10 $11h $12m $13s";
+                        $advanced = $advanced . ".BETWEEN($ARG,$ARG2)";
+                        return;
+                    }
+                    else {
+                        err_handle $ERR_DATE_MSG;
+                        return;
+                    }
+                }
+                else {
+                    if ($ARG =~ /^(\d{4})-(\d{2})-(\d{2})-(\d{2}):(\d{2}):(\d{2})(\S{3})$/) {
+                        $ARG = "$7 $1 $month{$2} $3 $4h $5m $6s";
+                        parseNumericOperator($OPERATOR,$ARG);
+                        return;
+                    }
+                    else {
+                        err_handle $ERR_DATE_MSG;
+                        return;
+                    }
+                }
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #12) Diffrent "Time" format used in Client-Cert Expressions. Example: 'Thu, 27 May 2010 16:10:15 GMT'
+        case 12 {
+            if ($expr_params =~ /^(\S+)(\s*.*)$/s) {
+                my $OPERATOR=$1;
+                $expr_params=$2;
+                my $ARG = extractArgument();
+                if ($ARG =~ /^\S{3}\, (\d{2}) (\S{3}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) (\S{3})$/) {
+                    $ARG = "$7 $3 $2 $1 $4h $5m $6s";
+                    parseNumericOperator($OPERATOR,$ARG);
+                    return;
+                }
+                else {
+                    err_handle $ERR_OPERATOR_MSG;
+                    return;
+                }
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        #13) Simple replacement with Hash value.
+        case 13 {
+            if ($qu ne "\"") {
+                $advanced =~ s/\(\"/\($qu/g;
+                $advanced =~ s/\"\)/$qu\)/g;
+            }
+            return;
+        }
+        #14) Port Based Expressions.
+        case 14 {
+            if ($expr_params =~ /^(\S+)\s+(\d+)(.*)$/s) {
+                my $operator=$1;
+                my $argument=$2;
+                $expr_params=$3;
+                if ($expr_params =~ /^-/) {
+                    parsePortRangeExpr($operator,$argument);
+                } else {
+                    parseNumericOperator($operator,$argument);
+                }
+                return;
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+    }
+}
+
+# Subroutine to extract the argument value from expression
+sub extractArgument
+{
+    if ($expr_params =~ m/^\s+(\S+)(\s*.*)$/s) {
+        my $temp1= $1;
+        $expr_params=$2;
+        my $arg_value = $temp1;
+        if ($arg_value =~ /^(\\\'|\\\"|\"|\')(.*)/s) {
+            my $quote_char = $1;
+            $arg_value = $2;
+            my $flag = 1;
+            $quote_char = '\\'.$quote_char;
+
+            if ($arg_value =~ /(.*?)$quote_char(.*)/s) {
+                my $temp = $arg_value = $1;$flag = 0;
+                $expr_params=$2.$expr_params;
+                if (chop($temp) eq "\\") {
+                    $arg_value = $arg_value.'\\'.$quote_char;
+                    $flag = 1;
+                }
+            }
+LEV_1:
+            if (($expr_params =~ /(.*?)$quote_char(.*)/s) && $flag) {
+                my $temp = $arg_value = $arg_value.$1;
+                $expr_params=$2;
+                if (chop($temp) eq "\\") {
+                    $arg_value = $arg_value.'\\'.$quote_char;
+                    goto LEV_1;
+                }
+            }
+        }
+        else {
+            if ($arg_value =~ /^(.+?)(\).*)/s) {
+                $arg_value = $1;
+                $expr_params = $2.$expr_params;
+            }
+        }
+        return $arg_value;
+    }
+}
+
+# Subroutine to find the text operation's equivlent
+sub parseTextOperator
+{
+    my $operator = shift;
+    my $qu='"';
+
+    if ($q_start eq "\"") {
+        $qu = "\\\"";
+    }
+    switch($operator) {
+        case '==' {
+            my $ARG = extractArgument();
+            $advanced = $advanced . '.EQ('.$qu.$ARG.$qu.')';
+            return;
+        }
+        case '!=' {
+            my $ARG = extractArgument();
+            $advanced = $advanced . '.EQ('.$qu.$ARG.$qu.').NOT';
+        }
+        case (/^EXISTS.*/is) {
+            if ($operator=~ /EXISTS(.*)/is) {
+                $expr_params = $1.$expr_params;
+            }
+            $advanced = $advanced . '.EXISTS';
+            return;
+        }
+        case (/^NOTEXISTS.*/is) {
+            if ($operator=~ /NOTEXISTS(.*)/is) {
+                $expr_params = $1.$expr_params;
+            }
+            $advanced = $advanced . '.EXISTS.NOT';
+            return;
+        }
+        case /CONTAINS$/i {
+            my $ARG = extractArgument();
+            my $advanced2 ='.CONTAINS('.$qu.$ARG.$qu.')';
+            my $flag = 0;
+            # To handle the LENGTH and OFFSET params.
+LEN_OR_OFF:
+            if ($expr_params  =~ /^\s+(-l\S*|-o\S*)\s+(\d+)(.*)$/is) {
+                my $temp1=$1;
+                my $temp2=$2;
+                my $temp3=$3;
+                if (length($temp1) > 7) {
+                    err_handle $ERR_SYNTAX_MSG;
+                    return;
+                }
+                if ((lc($temp1) eq substr("-length",0,length($temp1))) && (($flag & 1) == 0)) {
+                    $advanced2 = '.SUBSTR(0,'.$temp2.')'.$advanced2;
+                    $expr_params = $temp3;
+                    $flag = $flag | 1;
+                    goto LEN_OR_OFF;
+                }
+                if ((lc($temp1) eq substr("-offset",0,length($temp1))) && (($flag & 2) == 0)) {
+                    $advanced2 = '.SKIP('.$temp2.')'.$advanced2;
+                    $expr_params = $temp3;
+                    $flag = $flag | 2;
+                    goto LEN_OR_OFF;
+                }
+            }
+            $advanced = $advanced . $advanced2;
+            if ($operator =~ /^NOTCONTAINS$/i) {
+                    $advanced = $advanced .'.NOT';
+            }
+            return;
+        }
+        case /^CONTENTS$/i {
+            my $advanced2 ="";
+            my $flag = 0;
+            # To handle the LENGTH and OFFSET params.
+LEN_OR_OFF2:
+            if ($expr_params  =~ /^\s+(-l\S*|-o\S*)\s+(\d+)(.*)$/is) {
+                my $temp1=$1;
+                my $temp2=$2;
+                my $temp3=$3;
+                if (length($temp1) > 7) {
+                    err_handle $ERR_SYNTAX_MSG;
+                    return;
+                }
+                if ((lc($temp1) eq substr("-length",0,length($temp1))) && (($flag & 1) == 0)) {
+                    $advanced2 = '.SUBSTR(0,'.$temp2.')';
+                    $expr_params = $temp3;
+                    $flag = $flag | 1;
+                    goto LEN_OR_OFF2;
+                }
+                if ((lc($temp1) eq substr("-offset",0,length($temp1))) && (($flag & 2) == 0)) {
+                    $advanced = $advanced.'.SKIP('.$temp2.')';
+                    $expr_params = $temp3;
+                    $flag = $flag | 2;
+                    goto LEN_OR_OFF2;
+                }
+            }
+            $advanced = $advanced . $advanced2.".LENGTH.GT(0)";
+            return;
+        }
+        else {
+            err_handle $ERR_OPERATOR_MSG;
+            return;
+        }
+    }
+}
+
+# Subroutine to parse port range expression
+sub parsePortRangeExpr
+{
+    my $operator = shift;
+    my $ARG = shift;
+    my $ARG2;
+
+    if ($expr_params =~ m/^-(\d+)(.*)$/s) {
+        $ARG2 = $1;
+        $expr_params = $2;
+    }
+    else {
+        err_handle $ERR_SYNTAX_MSG;
+        return;
+    }
+    switch($operator) {
+        case '==' {
+            $advanced = $advanced . ".BETWEEN(". min($ARG, $ARG2) . ", " . max($ARG, $ARG2) .")";
+            return;
+        }
+        case '!=' {
+            $advanced = $advanced . ".BETWEEN(". min($ARG, $ARG2) . ", " . max($ARG, $ARG2). ").NOT";
+            return;
+        }
+        case '>=' {
+            $advanced = $advanced . '.GE('.$ARG.')' . ' || ' . $advanced . '.GE('.$ARG2.')';
+            return;
+        }
+        case '>' {
+            $advanced = $advanced . '.GT('.$ARG.')' . ' || ' . $advanced . '.GT('.$ARG2.')';
+            return;
+        }
+        case '<=' {
+            $advanced = $advanced . '.LE('.$ARG.')' . ' && ' . $advanced . '.LE('.$ARG2.')';
+            return;
+        }
+        case '<' {
+            $advanced = $advanced . '.LT('.$ARG.')' . ' && ' . $advanced . '.LT('.$ARG2.')';
+            return;
+        }
+        case /^BETWEEN$/i {
+            $advanced = $advanced . ".BETWEEN(" . min($ARG, $ARG2). ", " . max($ARG, $ARG2) . ")";
+            return;
+        }
+        else {
+            err_handle $ERR_OPERATOR_MSG;
+            return;
+        }
+    }
+}
+
+# Subroutine to parse numeric operators
+sub parseNumericOperator
+{
+    my $operator = shift;
+    my $ARG = shift;
+
+    switch($operator) {
+        case '==' {
+            $advanced = $advanced . '.EQ('.$ARG.')';
+            return;
+        }
+        case '!=' {
+            $advanced = $advanced . '.EQ('.$ARG.').NOT';
+            return;
+        }
+        case '>=' {
+            $advanced = $advanced . '.GE('.$ARG.')';
+            return;
+        }
+        case '>' {
+            $advanced = $advanced . '.GT('.$ARG.')';
+            return;
+        }
+        case '<=' {
+            $advanced = $advanced . '.LE('.$ARG.')';
+            return;
+        }
+        case '<' {
+            $advanced = $advanced . '.LT('.$ARG.')';
+            return;
+        }
+        case /^BETWEEN$/i {
+            if ($expr_params =~ m/^-(\d+)(.*)$/s) {
+                my $ARG2 = $1;
+                $expr_params = $2;
+                $advanced = $advanced . ".BETWEEN($ARG,$ARG2)";
+                return;
+            }
+            else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
+        else {
+            err_handle $ERR_OPERATOR_MSG;
+            return;
+        }
+    }
+}
+
+# Subroutine to parse the sub net mask
+sub parseNetmask {
+    my $netmask = shift;
+    my $bit_count=0;
+    my @GET;
+    $netmask =~ /(\d+).(\d+).(\d+).(\d+)/;
+    $GET[1]= $1;$GET[2]= $2;$GET[3]= $3;$GET[4]= $4;
+    my $i=1;
+    my $temp = 1<<7;
+
+    while((($GET[$i] & $temp) != 0) && ($i <= 4)) {
+        $temp=$temp>>1;
+        if ($temp == 0) {
+            $temp = 1<<7;$i++;
+        }
+        $bit_count++;
+    }
+    return $bit_count;
+}
+
+# Subroutine for usage or help
+sub usage {
+	print "Usage: nspepi -e \"classic expression\"\n";
+	print "Max expression length = 8191\n\n";
+	print "Output format:\n\n";
+	print "\t<Converted advanced expression>\n";
+	exit;
+}
