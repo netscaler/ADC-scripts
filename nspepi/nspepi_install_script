@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Use of this software is governed by the license terms, if any,
+# which accompany or are included with this software.
+
+# Following files should have executable permission
+declare -a file_list_550=("nspepi"
+                          "check_invalid_config"
+                          "nspepi2/nspepi_main.py"
+                          "nspepi2/config_check_main.py"
+                          "nspepi2/nspepi_helper")
+
+declare -a file_list_to_copy=("nspepi"
+                              "check_invalid_config"
+                              "nspepi_install_script")
+NSPEPI2_DIR_TO_COPY="nspepi2"
+
+NSPEPI_DIR="/netscaler"
+NSPEPI_BACKUP_DIR="/var/nspepi_backup"
+NSBEFORE_FILE="/nsconfig/nsbefore.sh"
+INSTALL_SCRIPT_NAME="nspepi_install_script"
+INSTALL_SCRIPT_BOOTUP_LOG="/var/log/nspepi_install_script_bootup.log"
+BOOTUP_OPTION="bootup"
+
+if [[ $# -eq 0 ]]; then
+    # If no arguments are present, then consider as initial setup
+    mkdir -p $NSPEPI_BACKUP_DIR
+
+    # copy the files downloaded to NSPEPI_BACKUP_DIR
+    echo "Copying the files to $NSPEPI_BACKUP_DIR as a backup"
+    for file in "${file_list_to_copy[@]}"; do
+        file_name="$NSPEPI_DIR/$file"
+        if [[ ! -f "$file_name" ]]; then
+            echo -e "$file_name file is missing\nInstallation failed"
+            exit
+        fi
+        cp $file_name $NSPEPI_BACKUP_DIR
+    done
+    # copy nspepi2 directory
+    nspepi2_full_path="$NSPEPI_DIR/$NSPEPI2_DIR_TO_COPY"
+    if [[ ! -d "$nspepi2_full_path" ]]; then
+        echo -e "$nspepi2_full_path directory is missing\nInstallation failed"
+        exit
+    fi
+    cp -r $nspepi2_full_path $NSPEPI_BACKUP_DIR
+
+    # Append the command to trigger nspepi_install_script to nsbefore.sh if it is not present
+    # This is required for not losing the nspepi files downloaded from GitHub during ADC reboot
+    if [[ ( ! -f "$NSBEFORE_FILE" ) || ( $(grep -c "$INSTALL_SCRIPT_NAME" "$NSBEFORE_FILE") -eq 0 ) ]]; then
+        echo "bash $NSPEPI_BACKUP_DIR/$INSTALL_SCRIPT_NAME $BOOTUP_OPTION \&> $INSTALL_SCRIPT_BOOTUP_LOG" >> $NSBEFORE_FILE
+    fi
+elif [[ $1 == $BOOTUP_OPTION ]]; then
+    # Bootup
+    # Copy the files from backup NSPEPI_BACKUP_DIR to NSPEPI_DIR
+    echo "Copying the files from $NSPEPI_BACKUP_DIR to $NSPEPI_DIR"
+    for file in "${file_list_to_copy[@]}"; do
+        file_name="$NSPEPI_BACKUP_DIR/$file"
+        if [[ ! -f "$file_name" ]]; then
+            echo -e "$file_name backup file is missing\nInstallation failed"
+            exit
+        fi
+        cp $file_name $NSPEPI_DIR
+    done
+    # copy nspepi2 directory
+    nspepi2_full_path="$NSPEPI_BACKUP_DIR/$NSPEPI2_DIR_TO_COPY"
+    if [[ ! -d "$nspepi2_full_path" ]]; then
+        echo -e "$nspepi2_full_path directory is missing\nInstallation failed"
+        exit
+    fi
+    cp -r $nspepi2_full_path $NSPEPI_DIR
+else
+    # Invalid argument
+    echo -e "Invalid command line argument\nInstallation failed"
+    exit
+fi
+
+# Adjust permissions
+for file in "${file_list_550[@]}"; do
+    file_name="$NSPEPI_DIR/$file"
+    if [[ ! -f "$file_name" ]]; then
+        echo -e "$file_name file is missing\nInstallation failed"
+        exit
+    fi
+    chmod 550 $file_name
+done
+
+echo "Installation successful"
