@@ -22,11 +22,14 @@ The following tools help with the conversion:
 - Validation tool for detecting removed deprecated features and functionalities in Citrix ADC version 13.1.
 - NSPEPI tool for converting deprecated commands/features to non-deprecated commands/features.
 
+**Note:** Both the validation tool and the NSPEPI tool can be used only with Citrix ADC release version 12.1 or later.
+
 For using the conversion tools, copy the files from here to your Citrix ADC appliance as per the instructions:
 
 1. Clone the repo `https://github.com/citrix/ADC-scripts.git` and goto `ADC-scripts/nspepi` directory.
-2. Copy `nspepi` and `check_invalid_config` files to the `/netscaler` path in Citrix ADC.
+2. Copy `nspepi_install_script`, `nspepi`, and `check_invalid_config` files to the `/netscaler` path in Citrix ADC.
 3. Copy all files under the `nspepi2` directory to the `/netscaler/nspepi2` path in Citrix ADC.
+4. After copying files to Citrix ADC, change your directory to `/netscaler` and then run the `bash nspepi_install_script` command.
 
 ## Pre-validation tool for removed or deprecated features in Citrix ADC version 13.1
 
@@ -72,7 +75,7 @@ The following is an example when the configuration file does not contain any dep
 
 The `NSPEPI` tool helps in converting the deprecated commands or features to the Citrix recommended alternatives.
 
-## Running the NSPEPI tool
+### Running the NSPEPI tool
 
 This tool needs to be run from the command line of the shell (you should type the `shell` command on the Citrix ADC CLI).
 
@@ -91,6 +94,18 @@ Parameters:
 
 The NSPEPI tool does not modify the input file. Instead, it generates two files with prefixes `new_` and `warn_` and they are put into the same directory as where the input configuration file is present. The file with the `new_ prefix` contains the converted configuration. And the file with `warn_ prefix` contains the warnings and errors. If there are any warnings or errors that got generated in the warn file, the errors must be fixed manually as part of the conversion process. Once converted, you must test the file in a test environment and then use it in the production environment to replace the actual `ns.conf` config file. After testing, you must reboot the appliance using the newly converted `ns.conf` config file.
 
+### Best Practices:
+- You must run the NSPEPI tool before upgrading to Citrix ADC release version 13.1.
+- The NSPEPI tool must be run on Citrix ADC release version 12.1 or 13.0.
+- For each different configuration that you need to convert:
+   - Run this tool on your configuration in your existing system older than 13.1 version and do any manual changes to the output that are required.
+   - Install the converted configuration on a suitable test system running on your existing Citrix ADC release version prior to 13.1 release.
+   - Perform a thorough regression testing.
+   - Move the configuration into production as per your normal configuration upgrade processes.
+   - Run in production for a sufficient time to ensure that the configuration is working correctly on real traffic.
+   - Upgrade to Citrix ADC version 13.1 using this configuration on a suitable schedule.
+
+### Examples:
 Following are a few examples of running the NSPEPI tool from the command line interface:
 
 Example output for –e parameter:

@@ -8,6 +8,24 @@ $ENV{PATH} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin'.$ENV
 
 use File::Basename;
 
+# checking if python and ply are present
+# Output would be /var/python/bin/python2 if python2 is
+# present, otherwise output would be empty string.
+my $python_version_string = `which python2 2> /dev/null`;
+if ($python_version_string eq "") {
+	# Python2 is not installed
+	print "\nAs python2 is not present, we can't check for an invalid configuration\n";
+	exit;
+}
+
+my $python_module_list = `python2 -m pip freeze 2> /dev/null`;
+if (!($python_module_list =~ m/\bply==/)) {
+	# ply is not present
+	print "\nAs required module PLY is not present, we can't check for an invalid configuration\n";
+	exit;
+}
+
+
 my $number_args = $#ARGV + 1;
 if ($number_args != 1) {
     print "Usage: check_invalid_config <ns_config_file>\n";

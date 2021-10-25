@@ -4,5 +4,22 @@
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
+# Checking if python and PLY are present
+# Output would be /var/python/bin/python2 if python2 is
+# present, otherwise output would be empty string.
+python_version_string=$(which python2 2> /dev/null)
+if [[ $python_version_string = "" ]]
+then
+	echo "As python2 is not present, we can't run the NSPEPI tool"
+	exit
+fi
+
+python_module_list=$(python2 -m pip freeze 2> /dev/null)
+if ! grep -q "\bply==" <<< $python_module_list
+then
+	echo "As required module PLY is not present, we can't run the NSPEPI tool"
+	exit
+fi
+
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 exec $DIR/nspepi2/nspepi_main.py "$@"
