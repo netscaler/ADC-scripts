@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Copyright 2021 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
@@ -255,6 +255,9 @@ def main():
     # convert ns config file
     elif args.infile is not None:
         new_path = os.path.join(conf_file_path, "new_" + conf_file_name)
+        if not os.path.exists(args.infile):
+            print("\nInput file " + args.infile + " does not exist")
+            return
         with open(args.infile, 'r') as infile:
             with open(new_path, 'w') as outfile:
                 convert_config_file(infile, outfile, args.verbose)

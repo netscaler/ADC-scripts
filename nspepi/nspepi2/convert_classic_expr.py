@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Copyright 2021 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
@@ -60,6 +60,7 @@ def convert_classic_expr(classic_expr):
         # Log the error message
         logging.error(exc.output)
         return None
+    nspepi_tool_output = nspepi_tool_output.decode()
     if nspepi_tool_output.startswith('ERROR:'):
         """old nspepi tool throws "ERROR: Expression is in blocked list
         of conversion" error for vpn client security expression."""

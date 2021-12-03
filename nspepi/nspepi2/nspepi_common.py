@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Copyright 2021 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
@@ -565,7 +565,7 @@ class PoliciesAndBinds(object):
                     else:
                         # no more valid states so all priorities including
                         # and after current priority cannot be converted
-                        res = list(itertools.chain(*(combined.values())))
+                        res.extend(combined[prio])
                         break
                 o.global_type = g_types[state]
                 res_gtypes.append(o)
@@ -611,30 +611,23 @@ class PoliciesAndBinds(object):
         gbinds = PoliciesAndBinds.global_binds
         for gmodule in gbinds:
             for gbind_type in gbinds[gmodule]:
+                locals_list = []
                 if local_binds:
                     for entity_type in local_binds:
-                        locals_list = []
                         if (gmodule in local_binds[entity_type] and gbind_type
                                 in local_binds[entity_type][gmodule]):
                             # module and bind_type match for global and local
                             locals_list += (
                                  local_binds[entity_type][gmodule][gbind_type])
-                        logging.debug(
-                            "do_priority_analysis() for {} {}"
-                            "".format(gmodule, gbind_type))
-                        unsupp, updated_gtypes = self.do_priority_analysis(
-                             gbinds[gmodule][gbind_type], locals_list,
-                             gmodule in PoliciesAndBinds.
-                             get_skip_global_override())
-                        unsupported.update(unsupp)
-                        updated_global_types += updated_gtypes
-                else:
-                    unsupp, updated_gtypes = self.do_priority_analysis(
-                                              gbinds[gmodule][gbind_type], [],
-                                              gmodule in PoliciesAndBinds.
-                                              get_skip_global_override())
-                    unsupported.update(unsupp)
-                    updated_global_types += updated_gtypes
+                logging.debug(
+                    "do_priority_analysis() for {} {}"
+                    "".format(gmodule, gbind_type))
+                unsupp, updated_gtypes = self.do_priority_analysis(
+                                          gbinds[gmodule][gbind_type], locals_list,
+                                          gmodule in PoliciesAndBinds.
+                                          get_skip_global_override())
+                unsupported.update(unsupp)
+                updated_global_types += updated_gtypes
         # store analysis results
         res = PoliciesAndBinds.priority_analysis_results
         for bindobj in unsupported:
@@ -939,12 +932,13 @@ class PoliciesAndBinds(object):
         weights = collections.defaultdict(set)
         [weights[int(self.get_group(o.entity_name).weight)].add(o)
             for o in group_list]
-        for v in weights.itervalues():
-            if len(set([o.entity_name for o in v])) > 1:
+        for v in weights.values():
+            same_weight_group_set = set([o.entity_name for o in v])
+            if len(same_weight_group_set) > 1:
                 logging.error("Groups: {} having the same weight and bindings"
                               " have no defined ordering in Advanced Policy"
                               " evaluation.".format(
-                                  ", ".join(set([o.entity_name for o in v]))))
+                                  ", ".join(sorted(same_weight_group_set))))
                 res.update(v)
         logging.debug("do_priority_analysis_for_all_users_groups(): ")
         logging.debug("\nusers: {}\n\ngroups: {}\n\nunsupported: {}"
