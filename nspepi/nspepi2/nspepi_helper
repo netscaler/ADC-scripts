@@ -10,7 +10,7 @@
 #
 # The upgraded command might have more than 8191 chars based on the
 # length of the classic command. These commands will fail while adding
-# on ADC
+# on Citrix ADC
 #
 # For better performance and to take full advantage of advanced syntax,
 # manually we have to optimize after conversion.
@@ -556,7 +556,7 @@ sub identifyExpressions
                 if ($expr_params =~ /^\s+-netmask\s+(\d+\.\d+\.\d+.\d+)(.*)$/is) {
                     my $netmask = $1;
                     $expr_params=$2;
-                    #Convert netmask for PI syntax.
+                    #Convert netmask for Advanced syntax.
                     $netmask = parseNetmask($netmask);
                     $advanced = $advanced.'.IN_SUBNET('.$ip_addr.'/'.$netmask.')';
                 }
@@ -589,14 +589,46 @@ sub identifyExpressions
                 }
                 else {
                     my $ARG = extractArgument();
-                    if ($ARG !~ /\*/) {
-                        $expr_params=$expression_temp;
-                        parseTextOperator($OPERATOR);
-                        return;
+                    my $last_index_of_slash = rindex($ARG, "/");
+                    my $url_after_last_slash = substr($ARG, $last_index_of_slash + 1);
+                    if (($url_after_last_slash eq '') || (($url_after_last_slash !~ /\*/) && ($url_after_last_slash !~ /\./))) {
+                        $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.$ARG.'.'.$qu.' + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
+                    } else {
+                        $advanced = 'HTTP.REQ.URL.PATH.EQ('.$qu.$ARG.$qu.')';
+                        my $last_char = substr($ARG, -1);
+                        if ($last_char eq '.') {
+                            # No need to do anything.
+                        } elsif ($last_char eq '*') {
+                            my $last_str = substr($ARG, -3);
+                            if ($last_str eq '*.*') {
+                                $advanced = 'HTTP.REQ.URL.PATH.STARTSWITH('.$qu.substr($ARG, 0, -3).$qu.')';
+                            } else {
+                                $last_str = substr($ARG, -2);
+                                if ($last_str eq '.*') {
+                                    $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.substr($ARG, 0, -1).$qu.'+ HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
+                                } elsif ($ARG eq '/*') {
+                                    $advanced = 'true';
+                                } else {
+                                    $advanced = 'HTTP.REQ.URL.PATH.STARTSWITH('.$qu.substr($ARG, 0, -1).$qu.')';
+                                }
+                            }
+                        } else {
+                            my $last_index_of_dot = rindex($url_after_last_slash, ".");
+                            if ($last_index_of_dot != -1) {
+                                $last_index_of_dot = rindex($ARG, ".");
+                                my $prefix = substr($ARG, 0, $last_index_of_dot);
+                                my $prefix_last_char = substr($prefix, -1);
+                                my $suffix = substr($ARG, $last_index_of_dot + 1);
+                                if ($prefix eq "/") {
+                                    $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.'/.'.$qu.'+ HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
+                                } elsif ($prefix_last_char eq "*") {
+                                    $advanced = '(HTTP.REQ.URL.PATH.STARTSWITH('.$qu.substr($prefix, 0, -1).$qu.') && HTTP.REQ.URL.SUFFIX.EQ('.$qu.$suffix.$qu.'))';
+                                }
+                            } else {
+                                $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.$ARG.'.'.$qu.'+ HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
+                            }
+                        }
                     }
-                    $ARG =~ s/\./\\./;
-                    $ARG =~ s/\*/(.*)/g;
-                    $advanced = $advanced.'.REGEX_MATCH(re#'.$ARG.'#)';
                     if ($OPERATOR eq '!=') {
                         $advanced =$advanced.'.NOT';
                     }

@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Copyright 2021 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
@@ -774,6 +774,11 @@ class ConvertConfig(object):
                         binds = module_bind_dict[bind_type]
                         new_binds = self.reprioritize_binds(binds)
                         for bind_info in new_binds:
+                            if (bind_info.flow_type_direction and
+                                    bind_info.policy_type == "classic"):
+                                self.update_tree_arg(
+                                    bind_info.parse_tree, "type",
+                                    bind_info.flow_type_direction.upper())
                             if common.pols_binds.is_bind_unsupported(
                                     bind_info.orig_cmd):
                                 logging.error(
@@ -793,11 +798,6 @@ class ConvertConfig(object):
                                 bind_cmd_trees.append(
                                     "# {}".format(str(bind_info.parse_tree)))
                             else:
-                                if (bind_info.flow_type_direction and
-                                        bind_info.policy_type == "classic"):
-                                    self.update_tree_arg(
-                                        bind_info.parse_tree, "type",
-                                        bind_info.flow_type_direction.upper())
                                 bind_cmd_trees.append(bind_info.parse_tree)
         return bind_cmd_trees
 
@@ -849,7 +849,12 @@ class CacheRedirection(ConvertConfig):
         vserver_protocol_dict - dict to store protocol as value to the
                   vserver name as key
         """
-        cr_protocol = commandParseTree.positional_value(1).value
+
+        if commandParseTree.keyword_exists('td'):
+            cr_protocol = str(commandParseTree.keyword_value('td')[1])
+        else:
+            cr_protocol = commandParseTree.positional_value(1).value
+
         crv_name = commandParseTree.positional_value(0).value
         vserver_protocol_dict[crv_name] = cr_protocol.upper()
         return [commandParseTree]
@@ -1733,7 +1738,12 @@ class ContentSwitching(ConvertConfig):
         vserver_protocol_dict - dict to store protocol as value to the
                  vserver name as key
         """
-        cs_protocol = commandParseTree.positional_value(1).value
+
+        if commandParseTree.keyword_exists('td'):
+            cs_protocol = str(commandParseTree.keyword_value('td')[1])
+        else:
+            cs_protocol = commandParseTree.positional_value(1).value
+
         csv_name = commandParseTree.positional_value(0).value
         vserver_protocol_dict[csv_name] = cs_protocol.upper()
         commandParseTree = ContentSwitching.convert_adv_expr_list(
@@ -1808,54 +1818,51 @@ class ContentSwitching(ConvertConfig):
             prefix_val = None
             suffix = None
             url_expr = commandParseTree.keyword_value('url')[0].value
-            if url_expr.endswith('.'):
+            last_url_expr = url_expr.rsplit('/', 1)
+            converted_url_expr = 'HTTP.REQ.URL.PATH.EQ("' + \
+                url_expr + '")'
+            if ((last_url_expr[1] == '') or
+                (('.' not in last_url_expr[1]) and
+                ('*' not in last_url_expr[1]))):
+                converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
+                    url_expr + '." + HTTP.REQ.URL.SUFFIX).' + \
+                    'STRIP_END_CHARS("."))'
+            elif url_expr.endswith('.'):
                 converted_url_expr = 'HTTP.REQ.URL.PATH.EQ("' + \
-                    url_expr + '.")'
+                    url_expr + '")'
+            elif url_expr.endswith('*'):
+                if (url_expr[-3:] == '*.*'):
+                    converted_url_expr = 'HTTP.REQ.URL.PATH.STARTSWITH("' + \
+                        url_expr[0: -3] + '")'
+                elif (url_expr[-2:] == '.*'):
+                    converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
+                        url_expr[0:-1] + \
+                        '" + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS("."))'                       
+                elif (url_expr == '/*'):
+                    converted_url_expr = 'true'
+                else:
+                    converted_url_expr =  'HTTP.REQ.URL.PATH.STARTSWITH("' + \
+                        url_expr[0:-1] + '")'
             else:
-                prefix_suffix = url_expr.rsplit('.', 1)
+                prefix_suffix = last_url_expr[1].rsplit('.', 1)
                 if len(prefix_suffix) is 1:
-                    """ No suffix is present in URL."""
-                    prefix = prefix_suffix[0]
-                    suffix = None
-                    if prefix.endswith('*'):
-                        prefix_val = prefix[:-1]
+                    converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
+                        url_expr + \
+                        '." + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS("."))'                       
                 else:
                     """ Suffix is present in URL."""
+                    prefix_suffix = url_expr.rsplit('.', 1)
                     prefix = prefix_suffix[0]
                     suffix = prefix_suffix[1]
-                    """
-                    If URL is abc..*.html, then
-                    in classic code, we don't check
-                    one dot before *, and this happens
-                    only if there is some suffix.
-                    """
-                    if prefix.endswith('*'):
-                        prefix_val = prefix[:-1]
-                        if prefix_val.endswith('.'):
-                            prefix_val = prefix_val[:-1]
-
-                if suffix and (prefix != '/') and (not prefix.endswith('*')):
-                    converted_url_expr = 'HTTP.REQ.URL.PATH.EQ("' + \
-                        url_expr + '")'
-                elif (suffix is None) and (not prefix.endswith('*')):
-                    converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
-                        prefix + '." + HTTP.REQ.URL.SUFFIX).' + \
-                        'STRIP_END_CHARS("."))'
-                elif (prefix == '/*') and (suffix is not None):
-                    converted_url_expr = 'HTTP.REQ.URL.SUFFIX.EQ("' + \
-                        suffix + '")'
-                elif (prefix.endswith('*')) and (suffix is not None):
-                    converted_url_expr = '(HTTP.REQ.URL.STARTSWITH("' + \
-                        prefix_val + '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
-                        suffix + '"))'
-                elif (prefix == '/*'):
-                    converted_url_expr = 'true'
-                elif (prefix.endswith('*')):
-                    converted_url_expr = 'HTTP.REQ.URL.STARTSWITH("' + \
-                        prefix_val + '")'
-                elif (suffix is not None) and (prefix == '/'):
-                    converted_url_expr = 'HTTP.REQ.URL.SUFFIX.EQ("' + \
-                        suffix + '")'
+                    if prefix == '/':
+                        converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("/."' + \
+                            ' + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS(' + \
+                            '"."))'
+                    elif prefix.endswith('*'):
+                        converted_url_expr = '(HTTP.REQ.URL.PATH.STARTSWITH' + \
+                            '("' + prefix[0:-1] + \
+                            '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
+                            suffix + '"))'
 
             if commandParseTree.keyword_exists('domain'):
                 domain_name = commandParseTree.keyword_value('domain')[0] \

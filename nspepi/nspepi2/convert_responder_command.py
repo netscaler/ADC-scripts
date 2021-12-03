@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Copyright 2021 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,

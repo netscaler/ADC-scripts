@@ -9,16 +9,16 @@ $ENV{PATH} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin'.$ENV
 use File::Basename;
 
 # checking if python and ply are present
-# Output would be /var/python/bin/python2 if python2 is
+# Output would be /var/python/bin/python if python is
 # present, otherwise output would be empty string.
-my $python_version_string = `which python2 2> /dev/null`;
+my $python_version_string = `which python 2> /dev/null`;
 if ($python_version_string eq "") {
 	# Python2 is not installed
-	print "\nAs python2 is not present, we can't check for an invalid configuration\n";
+	print "\nAs python is not present, we can't check for an invalid configuration\n";
 	exit;
 }
 
-my $python_module_list = `python2 -m pip freeze 2> /dev/null`;
+my $python_module_list = `python -m pip freeze 2> /dev/null`;
 if (!($python_module_list =~ m/\bply==/)) {
 	# ply is not present
 	print "\nAs required module PLY is not present, we can't check for an invalid configuration\n";
@@ -40,7 +40,7 @@ if (not -e $config_file) {
 
 my($filename, $dir_path) = fileparse($config_file);
 
-my $exit_status = system("python2 /netscaler/nspepi2/config_check_main.py -f $config_file");
+my $exit_status = system("python /netscaler/nspepi2/config_check_main.py -f $config_file");
 if ($exit_status != 0) {
 	print "Error in checking config file: $exit_status";
 	exit;

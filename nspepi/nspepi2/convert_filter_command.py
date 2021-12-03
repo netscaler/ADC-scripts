@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 
 # Copyright 2021 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
@@ -648,7 +648,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
             # having value as prebody or postbody Since they belong to
             # html injection family
             return self.return_original_input(original_cmd, pol_obj)
-        for dict_key, dict_value in self._actionTypeName.iteritems():
+        for dict_key, dict_value in self._actionTypeName.items():
             """ Extract key and value from stored _actionTypeName
             dictionary through action convertion """
             if policy_action not in dict_value:
