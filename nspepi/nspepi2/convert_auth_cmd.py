@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -85,6 +85,10 @@ class Authentication(cli_cmds.ConvertConfig):
                                                     'rule')
         if auth_policy_parse_tree.upgraded:
             self.replace_advanced_name(auth_policy_parse_tree)
+            # Remove the devno so that multiple lines
+            # don't have the same devno.
+            if auth_policy_parse_tree.keyword_exists('devno'):
+                auth_policy_parse_tree.remove_keyword('devno')
             tree_list.append(auth_policy_parse_tree)
             pol_obj.policy_type = "classic"
         else:
@@ -157,6 +161,10 @@ class Authentication(cli_cmds.ConvertConfig):
         auth_policy_parse_tree.set_upgraded()
         pol_obj.policy_type = "classic"
         self.replace_advanced_name(auth_policy_parse_tree)
+        # Remove the devno so that multiple lines
+        # don't have the same devno.
+        if auth_policy_parse_tree.keyword_exists('devno'):
+            auth_policy_parse_tree.remove_keyword('devno')
         tree_list.append(auth_policy_parse_tree)
         return tree_list
 

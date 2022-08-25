@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -390,8 +390,8 @@ class NamedExpression(CheckConfig):
 
         expr_name = commandParseTree.positional_value(0).value
         expr_rule = commandParseTree.positional_value(1).value
-        named_expr[expr_name] = expr_rule
         lower_expr_name = expr_name.lower()
+        named_expr[lower_expr_name] = expr_rule
         if (((lower_expr_name in reserved_word_list) or
              (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None) or
              (lower_expr_name in policy_entities_names))):
