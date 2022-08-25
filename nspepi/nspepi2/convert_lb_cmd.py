@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -101,7 +101,8 @@ class LB(cli_cmds.ConvertConfig):
         rule = add_lbvserver_parse_tree.keyword_value("rule")[0].value
         suffix_len_to_remove = len('.LENGTH.GT(0)"')
         for index in range(len(self._search_patterns)):
-            if self.search_pattern(rule, index):
+            found_expr_list = []
+            if self.search_pattern(rule, index, found_expr_list):
                 match_obj = self.match_pattern(rule, index)
                 if match_obj[0]:
                     """ CONTENTS exists and is a simple expression.
@@ -174,23 +175,27 @@ class LB(cli_cmds.ConvertConfig):
                                  ", ".join(removed_keywords)))
         return [add_lbvserver_parse_tree]
 
-    def search_pattern(self, rule, index):
+    def search_pattern(self, rule, index, found_expr_list):
         """
         Searches for CONTENT expression in rule expression and in
         named expressions if included.
         Returns True if CONTENT expression is found.
         rule - Expression in which CONTENT expression should be searched.
         index - CONTENT expression index in _search_patterns list.
+        found_expr_list - List of the classic named expressions found in the expression.
         """
         expr_list = cli_cmds.get_classic_expr_list(rule)
         if self._search_patterns[index].search(rule):
             return True
         else:
             for expr in expr_list:
-                expr_name = expr[0]
-                expr_rule = cli_cmds.named_expr[expr_name]
-                if self.search_pattern(expr_rule, index):
-                    return True
+                lower_expr_name = expr[0].lower()
+                if (lower_expr_name not in found_expr_list):
+                    found_expr_list.append(lower_expr_name)
+                    if (lower_expr_name in cli_cmds.named_expr):
+                        expr_rule = cli_cmds.named_expr[lower_expr_name]
+                        if self.search_pattern(expr_rule, index, found_expr_list):
+                            return True
             return False
 
     def match_pattern(self, rule, index):
@@ -216,7 +221,7 @@ class LB(cli_cmds.ConvertConfig):
                 # Example: "true && e1"
                 if rule != expr_name:
                     return [False]
-                expr_rule = cli_cmds.named_expr[expr_name]
+                expr_rule = cli_cmds.named_expr[expr_name.lower()]
                 return self.match_pattern(expr_rule, index)
 
     @common.register_for_cmd("bind", "lb", "vserver")

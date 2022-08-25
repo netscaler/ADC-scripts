@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -1161,6 +1161,10 @@ class TunnelTraffic(ConvertConfig):
             pol_obj = common.Policy(policy_name, self.__class__.__name__,
                                     "classic")
             common.pols_binds.store_policy(pol_obj)
+            # Remove the devno so that multiple lines
+            # don't have the same devno.
+            if commandParseTree.keyword_exists('devno'):
+                commandParseTree.remove_keyword('devno')
             commandParseTree.set_upgraded()
 
         priority_arg = "priority"
@@ -1627,8 +1631,8 @@ class NamedExpression(ConvertConfig):
 
         expr_name = commandParseTree.positional_value(0).value
         expr_rule = commandParseTree.positional_value(1).value
-        named_expr[expr_name] = expr_rule
         lower_expr_name = expr_name.lower()
+        named_expr[lower_expr_name] = expr_rule
         if (((lower_expr_name in reserved_word_list) or
              (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None) or
              (lower_expr_name in policy_entities_names))):
@@ -1678,6 +1682,10 @@ class NamedExpression(ConvertConfig):
             """
             name_node = commandParseTree.positional_value(0)
             name_node.set_value(get_advanced_name(name_node.value))
+            # Remove the devno so that multiple lines
+            # don't have the same devno.
+            if commandParseTree.keyword_exists('devno'):
+                commandParseTree.remove_keyword('devno')
             tree_list.append(commandParseTree)
             NamedExpression.register_policy_entity_name(commandParseTree)
             NamedExpression.register_classic_entity_name(original_tree)
@@ -1726,8 +1734,20 @@ class ContentSwitching(ConvertConfig):
                                     "bind_trees" - List of bind trees where
                                                    the corresponding policy is
                                                    bound.
+        _cs_vserver_info_ci - List of the CS vserver name for which
+                              caseSensitive parameter is set to OFF.
+        _policy_url_info - Contains information about classic policies
+                           using url parameter.
+                           key - policy name
+                           value - converted advanced expression for
+                                   case insensitive search, which will
+                                   be used if the policy is bound to
+                                   any CS vserver for which caseSensitive
+                                   parameter is set to OFF.
         """
         self._policy_bind_info = OrderedDict()
+        self._cs_vserver_info_ci = []
+        self._policy_url_info = OrderedDict()
 
     @common.register_for_cmd("add", "cs", "vserver")
     def convert_cs_vserver(self, commandParseTree):
@@ -1746,6 +1766,13 @@ class ContentSwitching(ConvertConfig):
 
         csv_name = commandParseTree.positional_value(0).value
         vserver_protocol_dict[csv_name] = cs_protocol.upper()
+
+        # Remove caseSensitive parameter as it has no effect
+        # on advanced expression.
+        if commandParseTree.keyword_exists('caseSensitive'):
+            commandParseTree.remove_keyword('caseSensitive')
+            self._cs_vserver_info_ci.append(csv_name)
+
         commandParseTree = ContentSwitching.convert_adv_expr_list(
                             commandParseTree, ["Listenpolicy", "pushLabel"])
         return [commandParseTree]
@@ -1817,36 +1844,41 @@ class ContentSwitching(ConvertConfig):
             prefix = None
             prefix_val = None
             suffix = None
+            converted_url_expr_ci = None
+            start_expr = 'HTTP.REQ.URL.PATH.'
+            start_expr_ci = 'HTTP.REQ.URL.PATH.SET_TEXT_MODE(IGNORECASE).'
+            append_start_expr = True
             url_expr = commandParseTree.keyword_value('url')[0].value
             last_url_expr = url_expr.rsplit('/', 1)
-            converted_url_expr = 'HTTP.REQ.URL.PATH.EQ("' + \
+            converted_url_expr = 'EQ("' + \
                 url_expr + '")'
             if ((last_url_expr[1] == '') or
                 (('.' not in last_url_expr[1]) and
                 ('*' not in last_url_expr[1]))):
-                converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
+                converted_url_expr = 'EQ(("' + \
                     url_expr + '." + HTTP.REQ.URL.SUFFIX).' + \
                     'STRIP_END_CHARS("."))'
             elif url_expr.endswith('.'):
-                converted_url_expr = 'HTTP.REQ.URL.PATH.EQ("' + \
+                converted_url_expr = 'EQ("' + \
                     url_expr + '")'
             elif url_expr.endswith('*'):
                 if (url_expr[-3:] == '*.*'):
-                    converted_url_expr = 'HTTP.REQ.URL.PATH.STARTSWITH("' + \
+                    converted_url_expr = 'STARTSWITH("' + \
                         url_expr[0: -3] + '")'
                 elif (url_expr[-2:] == '.*'):
-                    converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
+                    converted_url_expr = 'EQ(("' + \
                         url_expr[0:-1] + \
                         '" + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS("."))'                       
                 elif (url_expr == '/*'):
                     converted_url_expr = 'true'
+                    append_start_expr = False
                 else:
-                    converted_url_expr =  'HTTP.REQ.URL.PATH.STARTSWITH("' + \
+                    converted_url_expr =  'STARTSWITH("' + \
                         url_expr[0:-1] + '")'
             else:
                 prefix_suffix = last_url_expr[1].rsplit('.', 1)
                 if len(prefix_suffix) is 1:
-                    converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("' + \
+                    converted_url_expr = 'EQ(("' + \
                         url_expr + \
                         '." + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS("."))'                       
                 else:
@@ -1855,7 +1887,7 @@ class ContentSwitching(ConvertConfig):
                     prefix = prefix_suffix[0]
                     suffix = prefix_suffix[1]
                     if prefix == '/':
-                        converted_url_expr = 'HTTP.REQ.URL.PATH.EQ(("/."' + \
+                        converted_url_expr = 'EQ(("/."' + \
                             ' + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS(' + \
                             '"."))'
                     elif prefix.endswith('*'):
@@ -1863,6 +1895,16 @@ class ContentSwitching(ConvertConfig):
                             '("' + prefix[0:-1] + \
                             '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
                             suffix + '"))'
+                        converted_url_expr_ci = '(HTTP.REQ.URL.PATH.' + \
+                            'SET_TEXT_MODE(IGNORECASE).STARTSWITH' + \
+                            '("' + prefix[0:-1] + \
+                            '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
+                            suffix + '"))'
+                        append_start_expr = False
+
+            if append_start_expr:
+                converted_url_expr = start_expr +  converted_url_expr
+                converted_url_expr_ci = start_expr_ci +  converted_url_expr
 
             if commandParseTree.keyword_exists('domain'):
                 domain_name = commandParseTree.keyword_value('domain')[0] \
@@ -1877,6 +1919,8 @@ class ContentSwitching(ConvertConfig):
             rule_keyword = CLIKeywordParameter(CLIKeywordName('rule'))
             rule_keyword.add_value(converted_url_expr)
             commandParseTree.add_keyword(rule_keyword)
+            if converted_url_expr_ci is not None:
+                self._policy_url_info[policy_name] = converted_url_expr_ci
         elif commandParseTree.keyword_exists('domain'):
             domain_name = commandParseTree.keyword_value('domain')[0].value
             domain_rule = 'HTTP.REQ.HOSTNAME.EQ("' + domain_name + '")'
@@ -2008,18 +2052,30 @@ class ContentSwitching(ConvertConfig):
             for index in range(len(self._policy_bind_info[policy_name][
                                                     "bind_trees"])):
                 vserver_name = ""
+                cs_vserver_name = ""
                 bind_tree = self._policy_bind_info[policy_name][
                     "bind_trees"][index]
                 if ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cs vserver"):
                     vserver_name = bind_tree.keyword_value(
                         "targetLBVserver")[0].value
+                    cs_vserver_name = bind_tree.positional_value(0).value
                 elif ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cr vserver"):
                     vserver_name = bind_tree.keyword_value(
                         "policyName")[1].value
                 new_policy_name = "nspepi_adv_" + policy_name + '_' + \
                     vserver_name
+                set_ci_rule = False
+                # If CS vserver is configured with caseSensitive
+                # parameter set to OFF and policy is configured
+                # with URL parameter, then add '_ci' suffix in the
+                # new policy name and rule of that policy should
+                # do case-insensitive search.
+                if ((cs_vserver_name in self._cs_vserver_info_ci) and
+                    (policy_name in self._policy_url_info)):
+                    new_policy_name += '_ci'
+                    set_ci_rule = True
                 truncated_pol_name = new_policy_name
                 action_name = "nspepi_adv_cs_act_" + vserver_name
                 truncated_act_name = action_name
@@ -2059,9 +2115,16 @@ class ContentSwitching(ConvertConfig):
                                                overlength_policy_names,
                                                overlength_policy_counter)
                     self.update_tree_arg(new_policy, 0, truncated_pol_name)
+                    if set_ci_rule:
+                        rule_node = new_policy.keyword_value('rule')
+                        rule_node[0].set_value(self._policy_url_info[policy_name], True)
                     action_key = CLIKeywordParameter(CLIKeywordName("action"))
                     action_key.add_value(truncated_act_name)
                     new_policy.add_keyword(action_key)
+                    # Remove the devno so that multiple lines
+                    # don't have the same devno.
+                    if new_policy.keyword_exists('devno'):
+                        new_policy.remove_keyword('devno')
                     newly_added_policy_names.append(new_policy_name)
                     pol_list.append(new_policy)
                 else:
