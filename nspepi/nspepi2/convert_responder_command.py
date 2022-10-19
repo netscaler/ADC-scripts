@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
 from nspepi_parse_tree import *
 import convert_cli_commands as cli_cmds
+from collections import OrderedDict
 
 @common.register_class_methods
 class Responder(cli_cmds.ConvertConfig):
@@ -22,6 +23,8 @@ class Responder(cli_cmds.ConvertConfig):
 
     def __init__(self):
         self._noop_action_list = []
+        self._terminating_action_list = ["drop", "reset"]
+        self._terminating_policy_list = []
 
     @common.register_for_cmd("add", "responder", "action")
     def convert_responder_action(self, tree):
@@ -36,6 +39,11 @@ class Responder(cli_cmds.ConvertConfig):
             return []
         tree = Responder.convert_adv_expr_list(
                 tree, [2, "reasonPhrase", "headers"])
+
+        if (action_type in [
+             "respondwith", "redirect", "respondwithhtmlpage"]):
+            self._terminating_action_list.append(action_name)
+
         return [tree]
 
     @common.register_for_cmd("add", "responder", "policy")
@@ -49,6 +57,8 @@ class Responder(cli_cmds.ConvertConfig):
         if (policy_action in self._noop_action_list):
             tree.positional_value(2).set_value("NOOP")
             tree.set_upgraded()
+        elif (policy_action in self._terminating_action_list):
+            self._terminating_policy_list.append(policy_name.lower())
 
         pol_obj = common.Policy(policy_name, self.__class__.__name__,
                                 "advanced")
@@ -74,10 +84,11 @@ class Responder(cli_cmds.ConvertConfig):
         priority_arg = 1
         goto_arg = 2
         position = "inplace"
-        if get_bind_type in ("REQ_OVERRIDE", "REQ_DEFAULT"):
-            # Set below flags only if added vserver is of HTTP/SSL protocol
-            if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-                Responder.resp_global_goto_exists = True
+        if ((policy_name.lower() not in self._terminating_policy_list) and
+            (get_bind_type.upper() in ("REQ_OVERRIDE", "REQ_DEFAULT"))):
+             # Set below flags only if added vserver is of HTTP/SSL protocol
+             if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
+                 Responder.resp_global_goto_exists = True
         self.convert_global_bind(
             tree, tree, policy_name, module, priority_arg, goto_arg, position)
         return []
@@ -103,8 +114,9 @@ class Responder(cli_cmds.ConvertConfig):
         goto_arg = "gotoPriorityExpression"
         if cli_cmds.vserver_protocol_dict[vs_name] in ("HTTP", "SSL"):
             # Set below flags only if vserver is of ptotocol HTTP/SSL
-            if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-                Responder.resp_vserver_goto_exists = True
+            if ((policy_name.lower() not in self._terminating_policy_list) and
+                (get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"))):
+                 Responder.resp_vserver_goto_exists = True
         self.convert_entity_policy_bind(
             bind_parse_tree, bind_parse_tree, policy_name,
             module, priority_arg, goto_arg)

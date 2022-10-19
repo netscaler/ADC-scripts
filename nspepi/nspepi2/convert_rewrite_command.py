@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -13,13 +13,19 @@ class Rewrite(cli_cmds.ConvertConfig):
     """
     Handles Rewrite feature to store few information for
         filter bind conversion
-    rw_global_goto_exists - Set this true if existing rewrite policy is
-               globally bound with GOTO END/USE_INVOCATION_RESULT
-    rw_vserver_goto_exists - Set this true if existing rewrite policy is bound
-               to vserver with GOTO END/USE_INVOCATION_RESULT
+    rw_req_global_goto_exists - Set this true if existing rewrite policy is
+               globally bound at the request side with GOTO END/USE_INVOCATION_RESULT
+    rw_res_global_goto_exists - Set this true if existing rewrite policy is
+               globally bound at the response side with GOTO END/USE_INVOCATION_RESULT
+    rw_req_vserver_goto_exists - Set this true if existing rewrite policy is bound
+               to vserver at the request side with GOTO END/USE_INVOCATION_RESULT
+    rw_res_vserver_goto_exists - Set this true if existing rewrite policy is bound
+               to vserver at the response side with GOTO END/USE_INVOCATION_RESULT
     """
-    rw_global_goto_exists = False
-    rw_vserver_goto_exists = False
+    rw_req_global_goto_exists = False
+    rw_res_global_goto_exists = False
+    rw_req_vserver_goto_exists = False
+    rw_res_vserver_goto_exists = False
 
     @staticmethod
     def is_pattern_regex(pattern):
@@ -55,6 +61,8 @@ class Rewrite(cli_cmds.ConvertConfig):
             search_val_param = CLIKeywordParameter(search_key)
             search_val_param.add_value(search_val)
             tree.add_keyword(search_val_param)
+        if tree.keyword_exists('bypassSafetyCheck'):
+            tree.remove_keyword('bypassSafetyCheck')
         tree = Rewrite.convert_adv_expr_list(tree, [3, "refineSearch"])
         return [tree]
 
@@ -87,11 +95,12 @@ class Rewrite(cli_cmds.ConvertConfig):
         module = self.__class__.__name__
         priority_arg = 1
         goto_arg = 2
-        if get_bind_type in (
-             "REQ_OVERRIDE", "RES_OVERRIDE", "REQ_DEFAULT", "RES_DEFAULT"):
+        if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
             # Set below flags only if added vserver is of HTTP/SSL protocol
-            if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-                Rewrite.rw_global_goto_exists = True
+            if get_bind_type in ("REQ_OVERRIDE", "REQ_DEFAULT"):
+                Rewrite.rw_req_global_goto_exists = True
+            elif get_bind_type in ("RES_OVERRIDE", "RES_DEFAULT"):
+                Rewrite.rw_req_global_goto_exists = True
         self.convert_global_bind(
             tree, tree, policy_name, module, priority_arg, goto_arg)
         return []
@@ -115,6 +124,7 @@ class Rewrite(cli_cmds.ConvertConfig):
             "gotoPriorityExpression")[0].value
         vs_name = bind_parse_tree.positional_value(0).value
         policy_name = bind_parse_tree.keyword_value("policyName")[0].value
+        flow_type = bind_parse_tree.keyword_value("type")[0].value
         module = self.__class__.__name__
         priority_arg = "priority"
         goto_arg = "gotoPriorityExpression"
@@ -122,7 +132,11 @@ class Rewrite(cli_cmds.ConvertConfig):
             # Set below flags only if vserver binding policies is of
             # HTTP/SSL protocol
             if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-                Rewrite.rw_vserver_goto_exists = True
+                upper_flow_type = flow_type.upper()
+                if upper_flow_type == "REQUEST":
+                    Rewrite.rw_req_vserver_goto_exists = True
+                elif upper_flow_type == "RESPONSE":
+                    Rewrite.rw_res_vserver_goto_exists = True
         self.convert_entity_policy_bind(
             bind_parse_tree, bind_parse_tree, policy_name,
             module, priority_arg, goto_arg)

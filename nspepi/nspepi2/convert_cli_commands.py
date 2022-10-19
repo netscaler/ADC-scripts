@@ -91,19 +91,65 @@ def get_classic_expr_list(expr):
             break
         token_value = str(next_token)
         token_value_len = len(token_value)
+        is_classic_expr = False
         if token_value in NamedExpression.built_in_named_expr:
             # Checking for built-in classic Named expression.
             adv_expr_name = NamedExpression.built_in_named_expr[token_value]
+            lower_adv_expr_name = adv_expr_name.lower()
+            if lower_adv_expr_name in policy_entities_names:
+                is_classic_expr = True
         else:
             adv_expr_name = get_advanced_name(token_value)
-        if (next_token.type == "IDENTIFIER" and
-                adv_expr_name.lower() in policy_entities_names):
+            if (adv_expr_name.lower() not in policy_entities_names):
+                if token_value.lower() in classic_entities_names:
+                    adv_expr_name = None
+                    is_classic_expr = True
+            else:
+                is_classic_expr = True
+        if (next_token.type == "IDENTIFIER" and is_classic_expr):
             start_offset = next_token.lexpos - token_value_len + 1
             expr_info = [token_value, adv_expr_name,
                          start_offset, token_value_len]
             classic_expr_info_list.append(expr_info)
 
     return classic_expr_info_list
+
+
+def has_client_security_expressions(expr):
+    """
+        Helper function to check that named
+        expressions configured with clientSecurityMessage
+        parameter are present in the given expression.
+        expr - Expression in which named
+           expressions need to be found.
+        Returns True and named expression list if the
+        named expressions configured with clientSecurityMessage
+        are present in the given expression, otherwise returns False
+        and empty named expression list.
+    """
+    expr_list = get_classic_expr_list(expr)
+    csec_expr_list = []
+    for expr_info in expr_list:
+        expr_name = expr_info[0].lower()
+        if expr_name in NamedExpression.csec_expr_list:
+            csec_expr_list.append(expr_name)
+            return ([True, csec_expr_list])
+
+    return ([False, csec_expr_list])
+
+
+def print_csec_error_message(expr_list):
+    """
+       Print the Error for those named expressions
+       which are configured with clientSecurityMessage
+       parameter.
+    """
+    for expr_name in expr_list:
+        if not NamedExpression.csec_expr_list[expr_name]["error_displayed"]:
+            logging.error(("Conversion of clientSecurityMessage based expression [{}] "
+                           "is not supported, please do the conversion manually.")
+                           .format(str(NamedExpression.csec_expr_list[expr_name]["tree"]).strip()))
+            NamedExpression.csec_expr_list[expr_name]["error_displayed"] = True
 
 
 class ConvertConfig(object):
@@ -121,6 +167,8 @@ class ConvertConfig(object):
         converted_expr = rule_expr
         for expr_info in reversed(get_classic_expr_list(rule_expr)):
             # Work in reverse order to avoid recomputing offsets
+            if expr_info[1] is None:
+                return None
             offset = expr_info[2]
             replace_len = expr_info[3]
             converted_expr = (converted_expr[0: offset] +
@@ -139,10 +187,18 @@ class ConvertConfig(object):
         """
         rule_node = commandParseTree.positional_value(pos)
         rule_expr = rule_node.value
+
+        csec_expr_info = has_client_security_expressions(rule_expr)
+        if csec_expr_info[0]:
+            print_csec_error_message(csec_expr_info[1])
+            logging.error('Error in converting command : ' +
+                          str(commandParseTree).strp())
+            return commandParseTree
+
         converted_expr = convert_classic_expr.convert_classic_expr(rule_expr)
         if converted_expr is None:
             logging.error('Error in converting command : ' +
-                          str(commandParseTree))
+                          str(commandParseTree).strip())
             converted_expr = rule_expr
         else:
             # converted_expr will have quotes and rule_expr will not have
@@ -172,10 +228,18 @@ class ConvertConfig(object):
         """
         rule_node = commandParseTree.keyword_value(keywordName)
         rule_expr = rule_node[0].value
+
+        csec_expr_info = has_client_security_expressions(rule_expr)
+        if csec_expr_info[0]:
+            print_csec_error_message(csec_expr_info[1])
+            logging.error('Error in converting command : ' +
+                          str(commandParseTree).strip())
+            return commandParseTree
+
         converted_expr = convert_classic_expr.convert_classic_expr(rule_expr)
         if converted_expr is None:
             logging.error('Error in converting command : ' +
-                          str(commandParseTree))
+                          str(commandParseTree).strip())
             converted_expr = rule_expr
         else:
             # converted_expr will have quotes and rule_expr will not have
@@ -215,7 +279,7 @@ class ConvertConfig(object):
             converted_expr = convert_classic_expr.convert_adv_expr(adv_expr)
             if converted_expr is None:
                 logging.error('Error in converting command : ' +
-                              str(original_tree))
+                              str(original_tree).strip())
                 return original_tree
             else:
                 converted_expr = remove_quotes(converted_expr)
@@ -690,7 +754,7 @@ class ConvertConfig(object):
                 # Update goto in parse tree.
                 self.update_tree_arg(bind_info.parse_tree,
                                      bind_info.bind_arg_goto, new_goto)
-            elif goto not in ("NEXT", "END", "USE_INVOCATION_RESULT"):
+            elif goto.upper() not in ("NEXT", "END", "USE_INVOCATION_RESULT"):
                 logging.error("gotoPriorityExpression in {} uses an"
                               " expression. Since the priorities for this"
                               " bindpoint have been renumbered, this"
@@ -1535,6 +1599,8 @@ class HMACKey(ConvertConfig):
 class NamedExpression(ConvertConfig):
     """ Handle Named expression feature """
 
+    csec_expr_list = OrderedDict()
+
     # Built-in classic named expression names and there
     # corresponding built-in advanced named expression names.
     built_in_named_expr = {
@@ -1647,10 +1713,18 @@ class NamedExpression(ConvertConfig):
                           .format(expr_name))
 
         if commandParseTree.keyword_exists('clientSecurityMessage'):
-            logging.error(("Error in converting expression {} : "
-                           "conversion of clientSecurityMessage based "
-                           "expression is not supported.")
-                          .format(expr_name))
+            NamedExpression.csec_expr_list[lower_expr_name] = {}
+            NamedExpression.csec_expr_list[lower_expr_name]["tree"] = commandParseTree
+            NamedExpression.csec_expr_list[lower_expr_name]["error_displayed"] = False
+            NamedExpression.register_classic_entity_name(commandParseTree)
+            return [commandParseTree]
+
+        csec_expr_info = has_client_security_expressions(expr_rule)
+        if csec_expr_info[0]:
+            NamedExpression.csec_expr_list[lower_expr_name] = {}
+            NamedExpression.csec_expr_list[lower_expr_name]["tree"] = commandParseTree
+            NamedExpression.csec_expr_list[lower_expr_name]["error_displayed"] = False
+            NamedExpression.register_classic_entity_name(commandParseTree)
             return [commandParseTree]
 
         original_tree = copy.deepcopy(commandParseTree)
@@ -1823,7 +1897,7 @@ class ContentSwitching(ConvertConfig):
                         rule_expr)
                     if converted_expr is None:
                         logging.error('Error in converting command : ' +
-                                      str(commandParseTree))
+                                      str(commandParseTree).strip())
                         return [commandParseTree]
                     converted_expr = converted_expr.strip('"')
                     domain_name = commandParseTree.keyword_value('domain')[0] \
@@ -2252,7 +2326,6 @@ class AdvExpression(ConvertConfig):
     @common.register_for_cmd("add", "transform", "policy")
     @common.register_for_cmd("add", "appqoe", "action")
     @common.register_for_cmd("add", "appqoe", "policy")
-    @common.register_for_cmd("add", "ssl", "policy")
     @common.register_for_cmd("add", "appflow", "policy")
     @common.register_for_cmd("add", "autoscale", "policy")
     @common.register_for_cmd("add", "authentication", "Policy")
@@ -2359,3 +2432,61 @@ class AdvExpression(ConvertConfig):
         if command in command_parameters_list:
             tree = AdvExpression.convert_adv_expr_list(tree, command_parameters_list[command])
         return [tree]
+
+@common.register_class_methods
+class SSL(ConvertConfig):
+    """ Handle SSL feature """
+
+    @common.register_for_cmd("add", "ssl", "policy")
+    def convert_policy(self, commandParseTree):
+        """
+        Check classic SSL policy.
+        """
+        original_tree = copy.deepcopy(commandParseTree)
+        convertedParseTree = SSL.convert_keyword_expr(commandParseTree, 'rule')
+        if convertedParseTree.upgraded:
+            logging.error(("Classic SSL policy [{}] is not working from 10.1 release, "
+                           "please remove the classic SSL policy configuration "
+                           "from the config file").format(str(original_tree).strip()))
+            return [original_tree]
+        return [commandParseTree]
+
+
+@common.register_class_methods
+class SureConnect(ConvertConfig):
+    """
+    Handle SureConnect commands
+    """
+    @common.register_for_cmd("add", "sc", "policy")
+    @common.register_for_cmd("set", "sc", "parameter")
+    def convert_policy(self, commandParseTree):
+        logging.error(("SureConnect feature command [{}] conversion "
+                       "is not supported, please do the conversion "
+                       "manually").format(str(commandParseTree).strip()))
+        return [commandParseTree]
+
+
+@common.register_class_methods
+class PriorityQueuing(ConvertConfig):
+    """
+    Hanlde PriorityQueuing commands
+    """
+    @common.register_for_cmd("add", "pq", "policy")
+    def convert_policy(self, commandParseTree):
+        logging.error(("PriorityQueuing feature command [{}] conversion "
+                       "is not supported, please do the conversion "
+                       "manually").format(str(commandParseTree).strip()))
+        return [commandParseTree]
+
+
+@common.register_class_methods
+class HDoSP(ConvertConfig):
+    """
+    Handle HTTP Denial of Service Protection commands
+    """
+    @common.register_for_cmd("add", "dos", "policy")
+    def convert_policy(self, commandParseTree):
+        logging.error(("HDoSP feature command [{}] conversion "
+                       "is not supported, please do the conversion "
+                       "manually").format(str(commandParseTree).strip()))
+        return [commandParseTree]

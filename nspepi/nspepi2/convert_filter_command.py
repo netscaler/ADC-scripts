@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -235,7 +235,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         _actionTypeName - Dictionary to store
                 {actionTypes: list of action names}
         _converted_pol_param - Dictionary to store- policyName: [re[sq]Action,
-                   converted module]
+                   converted module, original_action_name]
         _policy_command - List to store converted actions which are called
                    by policy and policy commands itself for those which
                    has two converted actions for each classic action.
@@ -257,6 +257,12 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         self._htmlInjection = []
         self._bind_tree_rw = []
         self._bind_tree_resp = []
+        self._policylabel_name = []
+        self._policy_label_priority = OrderedDict()
+        self.overlength_policy_names = {}
+        self.overlength_policy_counter = 0
+        self.overlength_policylabel_names = {}
+        self.overlength_policylabel_counter = 0
         '''
         # TODO - This should be uncommented at the time of
         # transformation for FORWARD actionType.
@@ -640,9 +646,10 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         policy_parse_tree = CLITransformFilter.convert_keyword_expr(
             policy_parse_tree, 'rule')
         if not policy_parse_tree.upgraded:
-            return self.return_original_input(original_cmd, pol_obj)
-        converted_pol_cmd, policy_action_key, policy_action = self.new_policy(
+            return [original_cmd]
+        converted_pol_cmd, policy_action_key, orig_action_name = self.new_policy(
             policy_parse_tree, policyName)
+        policy_action = orig_action_name.lower()
         if policy_action in self._htmlInjection:
             # Return input for those policies which are calling actions
             # having value as prebody or postbody Since they belong to
@@ -729,7 +736,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         if policyName not in self._converted_pol_param:
             self._converted_pol_param[policyName] = []
         self._converted_pol_param[policyName] += (
-            policy_action_key, converted_pol_cmd.group)
+            policy_action_key, converted_pol_cmd.group, orig_action_name)
         return []
 
     def new_policy(self, policy_parse_tree, policyName):
@@ -750,7 +757,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         if policy_parse_tree.keyword_exists("resAction"):
             policy_action_key = "resAction"
         policy_action = policy_parse_tree.keyword_value(
-            policy_action_key)[0].value.lower()
+            policy_action_key)[0].value
         advanced_expr = policy_parse_tree.keyword_value("rule")[0].value
         policy_name = CLIPositionalParameter(policyName)
         rule = CLIPositionalParameter(advanced_expr)
@@ -906,10 +913,32 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 goto_arg = "gotoPriorityExpression"
             module = "Rewrite"
             cli_cmds.ConvertConfig.bind_default_goto = "NEXT"
-            if (rewrite_class.rw_global_goto_exists == True) or (
-                 rewrite_class.rw_vserver_goto_exists == True):
-                bind_cmd = self.return_bind_cmd_warning(rw)
-                converted_list.append(bind_cmd)
+            request_side_binding = False
+            if rw.keyword_value("type")[0].value.startswith("REQ"):
+                request_side_binding = True
+
+            if ((request_side_binding and (rewrite_class.rw_req_global_goto_exists or
+                 rewrite_class.rw_req_vserver_goto_exists)) or
+                 ((not request_side_binding) and (rewrite_class.rw_res_global_goto_exists or
+                 rewrite_class.rw_res_vserver_goto_exists))):
+                add_action_type = self.policy_has_add_action_type(policy_name)
+                if add_action_type:
+                    if rw.ot == "vserver":
+                        policy_label_name = self.get_policy_label_name(vs_name, request_side_binding)
+                        if policy_label_name not in self._policylabel_name:
+                            pl_tree = self.create_policy_label(policy_label_name, request_side_binding)
+                            converted_list.append(pl_tree)
+                            pol_tree = self.add_policy_invoke_policylabel(policy_label_name,
+                                                                          vs_name, rw.group,
+                                                                          request_side_binding)
+                            converted_list.append(pol_tree)
+                        pl_bind_tree = self.bind_to_policy_label(policy_label_name, policy_name)
+                        converted_list.append(pl_bind_tree)
+                    else:
+                        self.modify_global_binding(rw, request_side_binding)
+                else:
+                    bind_cmd = self.return_bind_cmd_warning(rw)
+                    converted_list.append(bind_cmd)
             else:
                 self.complete_convert_bind_cmd(
                     rw, policy_name, module, priority_arg,
@@ -953,3 +982,154 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         if (cmd.ot == "vserver"):
             self.convert_entity_policy_bind(
                 cmd, cmd, policy_name, module, priority_arg, goto_arg, position)
+
+    def get_policy_label_name(self, vserver_name, is_req_flow_type):
+        """
+        Get the rewrite policy label
+        vserver_name - Vserver name
+        is_req_flow_type - True if the flow type is request,
+                           otherwise False
+        """
+        suffix = ("req" if (is_req_flow_type) else "res")
+        label_name = "nspepi_adv_" + vserver_name + "_" + suffix
+        if len(label_name) > 127:
+            if label_name not in self.overlength_policylabel_names:
+                label_name, self.overlength_policylabel_counter = \
+                    self.truncate_name(label_name,
+                                       self.overlength_policylabel_names,
+                                       self.overlength_policylabel_counter)
+            else:
+                label_name = self.overlength_policylabel_counter[label_name]
+        return (label_name)
+
+    def create_policy_label(self, label_name, is_req_flow_type):
+        """
+        Create a rewrite policylabel with the given name and flow type
+        label_name - rewrite policy label name
+        is_req_flow_type - True if the flow type is request,
+                           otherwise False
+        """
+        pl_type = "http_req" if (is_req_flow_type) else "http_res"
+        pl_cmd = CLICommand("add", "rewrite", "policylabel")
+        name_node = CLIPositionalParameter(label_name)
+        pl_type_node = CLIPositionalParameter(pl_type)
+        pl_cmd.add_positional_list([name_node, pl_type_node])
+        pl_cmd.set_upgraded()
+        self._policylabel_name.append(label_name)
+        return pl_cmd
+
+    def bind_to_policy_label(self, label_name, policy_name):
+        """
+        Create a command to bind the policy to the policylabel
+        label_name - rewrite policy label name
+        policy_name - rewrite policy name which needs to be bound
+        """
+        bind_cmd = CLICommand("bind", "rewrite", "policylabel")
+        name_node = CLIPositionalParameter(label_name)
+        policy_node = CLIPositionalParameter(policy_name)
+        new_prio = 100
+        if label_name in self._policy_label_priority:
+            new_prio += self._policy_label_priority[label_name]
+        self._policy_label_priority[label_name] = new_prio
+        prio_node = CLIPositionalParameter(str(new_prio))
+        goto_node = CLIPositionalParameter("NEXT")
+        bind_cmd.add_positional_list([name_node,
+            policy_node, prio_node, goto_node])
+        bind_cmd.set_upgraded()
+        return bind_cmd
+
+    def policy_has_add_action_type(self, policy_name):
+        """
+        Check whether policy is using action of ADD type
+        """
+        action_name = self._converted_pol_param[policy_name][2]
+        if "add" in self._actionTypeName:
+            return (action_name in self._actionTypeName["add"])
+        else:
+            return False
+
+    def add_policy_invoke_policylabel(self, label_name, vserver_name,
+            vserver_group, is_req_flow_type):
+        """
+        Create a rewrite policy and bind it globally to the invoke
+        the policylabel
+        label_name - rewrite policy label name
+        vserver_name - vserver name in which filter policy is bound
+	vserver_group - vserver group: lb, cs or cr
+        is_req_flow_type - True if binding is for request side,
+                           otherwise False
+        """
+        method_name = "LB" if (vserver_group == "lb") else "CS"
+        rule_expr = '((HTTP.REQ.' + method_name + '_VSERVER.NAME ALT "").EQ("' + vserver_name + '"))'
+
+        pol_cmd = CLICommand("add", "rewrite", "policy")
+
+        policy_name = "nspepi_rw_" + vserver_name + "_pol"
+        if len(policy_name) > 127:
+            if policy_name not in self.overlength_policy_names:
+                policy_name, self.overlength_policy_counter = \
+                    self.truncate_name(policy_name,
+                                       self.overlength_policy_names,
+                                       self.overlength_policy_counter)
+            else:
+                policy_name = self.overlength_policy_names[policy_name]
+        policy_node = CLIPositionalParameter(policy_name)
+        rule_node = CLIPositionalParameter(rule_expr)
+        action_node = CLIPositionalParameter("NOREWRITE")
+        pol_cmd.add_positional_list([policy_node, rule_node, action_node])
+        pol_cmd.set_upgraded()
+
+        bind_cmd = CLICommand("bind", "rewrite", "global")
+        policy_node = CLIPositionalParameter(policy_name)
+        prio_node = CLIPositionalParameter("100")
+        goto_node = CLIPositionalParameter("NEXT")
+        bind_cmd.add_positional_list([
+            policy_node, prio_node, goto_node])
+        type_node = CLIKeywordParameter(CLIKeywordName("type"))
+        type_node.add_value("REQ_OVERRIDE" if (is_req_flow_type) else "RES_OVERRIDE")
+        bind_cmd.add_keyword(type_node)
+        invoke_node = CLIKeywordParameter(CLIKeywordName("invoke"))
+        invoke_node.add_value_list(["policylabel", label_name])
+        bind_cmd.add_keyword(invoke_node)
+        self.complete_convert_bind_cmd(bind_cmd,
+            policy_name, "rewrite", 1, 2, "before")
+
+        return pol_cmd
+
+    def truncate_name(self, name, name_mapping, counter):
+        """
+        Truncates name shorter than 127 and adds a counter at the end.
+        name - name that should be truncated.
+        name_mapping - dictionary which saves name and its truncated name.
+                       key - name
+                       value - truncated name
+        counter - counter to be appended at the end of truncated name.
+        """
+        counter += 1
+        # Reserving 1 for '_' + 6 for counter.
+        truncated_name = name[0: 120]
+        truncated_name += "_" + str(counter)
+        name_mapping[name] = truncated_name
+        return truncated_name, counter
+
+    def modify_global_binding(self, parse_tree, is_req_flow_type):
+        """
+        Modify the current bindig and bind it to the RE[Q\S]_OVERRIDE
+        with gotoPriorityExpression NEXT.
+        parse_tree - Parse tree of the current binding
+        is_req_flow_type - True if binding is for request side,
+                           otherwise False
+        """
+        bind_cmd = CLICommand("bind", "rewrite", "global")
+        policy_name = parse_tree.positional_value(0).value
+        policy_node = CLIPositionalParameter(policy_name)
+        prio_node = CLIPositionalParameter("100")
+        goto_node = CLIPositionalParameter("NEXT")
+        bind_cmd.add_positional_list([
+            policy_node, prio_node, goto_node])
+        type_node = CLIKeywordParameter(CLIKeywordName("type"))
+        type_node.add_value("REQ_OVERRIDE" if (is_req_flow_type) else "RES_OVERRIDE")
+        bind_cmd.add_keyword(type_node)
+        self.complete_convert_bind_cmd(bind_cmd,
+            policy_name, "rewrite", 1, 2, "before")
+
