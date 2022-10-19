@@ -83,6 +83,8 @@ class CheckConfig(object):
         if converted_expr is None:
             logging.error('Error in checking command : ' +
                           str(commandParseTree))
+        elif converted_expr == "Invalid Expression":
+                commandParseTree.set_invalid()
         else:
             # converted_expr will have quotes and rule_expr will not have
             # quotes. Since we are comparing these 2 expressions, removing
@@ -91,7 +93,7 @@ class CheckConfig(object):
             if converted_expr != rule_expr:
                 # expression is converted, this is classic.
                 commandParseTree.set_invalid()
-            if is_classic_named_expr_present(converted_expr):
+            elif is_classic_named_expr_present(converted_expr):
                 commandParseTree.set_invalid()
         return commandParseTree
 
@@ -113,6 +115,8 @@ class CheckConfig(object):
         if converted_expr is None:
             logging.error('Error in checking command : ' +
                           str(commandParseTree))
+        elif converted_expr == "Invalid Expression":
+                commandParseTree.set_invalid()
         else:
             # converted_expr will have quotes and rule_expr will not have
             # quotes. Since we are comparing these 2 expressions, removing
@@ -121,7 +125,7 @@ class CheckConfig(object):
             if converted_expr != rule_expr:
                 # expression is converted, this is classic.
                 commandParseTree.set_invalid()
-            if is_classic_named_expr_present(converted_expr):
+            elif is_classic_named_expr_present(converted_expr):
                 commandParseTree.set_invalid()
         return commandParseTree
 
@@ -244,6 +248,21 @@ class Dataset(CheckConfig):
         if commandParseTree.keyword_exists('indexType'):
             return [commandParseTree]
         return []
+
+
+@common.register_class_methods
+class Patclass(CheckConfig):
+    """ Patclass entity """
+
+    @common.register_for_cmd("add", "policy", "patclass")
+    def check_add_patclass(self, commandParseTree):
+        Patclass.register_policy_entity_name(commandParseTree)
+        return [commandParseTree]
+
+    @common.register_for_cmd("bind", "policy", "patclass")
+    def check_bind_patclass(self, commandParseTree):
+        Patclass.register_policy_entity_name(commandParseTree)
+        return [commandParseTree]
 
 
 @common.register_class_methods

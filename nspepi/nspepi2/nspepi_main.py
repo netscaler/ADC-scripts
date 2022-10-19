@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -261,9 +261,14 @@ def main():
         with open(args.infile, 'r') as infile:
             with open(new_path, 'w') as outfile:
                 convert_config_file(infile, outfile, args.verbose)
+                if os.path.getsize(log_file_name) == 0:
+                    error_warn_msg = ".\nConversion is successful, no error or warning is generated."
+                    os.remove(log_file_name)
+                else:
+                    error_warn_msg = ".\nCheck warn_" + conf_file_name + \
+                        " file for all warnings or errors that have been generated."
                 print("\nConverted config will be available in a new file new_"
-                      + conf_file_name + ".\nCheck warn_" + conf_file_name +
-                      " file for any warnings or errors that might have been generated.")
+                      + conf_file_name + error_warn_msg) 
                 if args.debug:
                     print("Check debug_" + conf_file_name + " file for debug logs.")
 

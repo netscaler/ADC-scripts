@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -41,8 +41,6 @@ def convert_classic_expr(classic_expr):
     tree_obj = CLIParseTreeNode()
     info_msg = 'INFO: Expression is not converted' + \
         ' - most likely it is a valid advanced expression'
-    warn_msg = 'WARNING: Line numbers which has ' + \
-        'more than 8191 characters length: 0'
     try:
         nspepi_tool_path = common.get_nspepi_tool_path()
         """Error message will be in the staring of
@@ -62,8 +60,8 @@ def convert_classic_expr(classic_expr):
         return None
     nspepi_tool_output = nspepi_tool_output.decode()
     if nspepi_tool_output.startswith('ERROR:'):
-        """old nspepi tool throws "ERROR: Expression is in blocked list
-        of conversion" error for vpn client security expression."""
+        """Handles the error returned by old
+        nspepi tool"""
         logging.error(nspepi_tool_output)
         return None
     elif nspepi_tool_output.endswith(info_msg):
@@ -72,27 +70,17 @@ def convert_classic_expr(classic_expr):
         nspepi_tool_output = classic_expr
         # classic_expr is not enclosed in quotes.
         nspepi_tool_output = tree_obj.normalize(nspepi_tool_output, True)
-    elif nspepi_tool_output.endswith(warn_msg):
-        logging.warning(nspepi_tool_output)
-        """ If expression has more than 8191 characters, old nspepi
-        tool gives warning message at the end of the output.
-
-        old nspepi tool output:
-        <advanced_expr> WARNING: Total number of warnings due to
-        expressions length greater than 8191 characters: 1
-        WARNING: Line numbers which has more than 8191 characters length: 0
-
-        Removing warning message from the output
-        """
-        expr_end_pos = nspepi_tool_output.find("WARNING")
-        nspepi_tool_output = nspepi_tool_output[0:expr_end_pos]
-        nspepi_tool_output = nspepi_tool_output.rstrip()
 
     # When NSPEPI tool is used with -e option, this handles classic built-in
     # Named expressions. When tool is used with -f option, all named
     # expressions are handled here.
     nspepi_tool_output = cli_commands.ConvertConfig.replace_named_expr(
         cli_commands.remove_quotes(nspepi_tool_output))
+    if nspepi_tool_output is None:
+        csec_expr_info = cli_commands.has_client_security_expressions(classic_expr)
+        if csec_expr_info[0]:
+            cli_commands.print_csec_error_message(csec_expr_info[1])
+        return None
     nspepi_tool_output = tree_obj.normalize(nspepi_tool_output, True)
     return nspepi_tool_output
 

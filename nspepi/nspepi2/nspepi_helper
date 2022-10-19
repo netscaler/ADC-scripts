@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -8,7 +8,7 @@
 #
 # The tool will not optimize the configuration instead it will create equivalents only.
 #
-# The upgraded command might have more than 8191 chars based on the
+# The upgraded command might have more than 1499 chars based on the
 # length of the classic command. These commands will fail while adding
 # on Citrix ADC
 #
@@ -31,7 +31,6 @@ my (
     $hash_key,
     $hash_value,
     $line,
-    $lineno,
     $expression,
     @expressions,
     $expr_type,
@@ -43,7 +42,6 @@ my (
     @nsconf,
     $key,
     $value,
-    @maxlen_warn,
     $CFILE,
     $LFILE,
     $WFILE,
@@ -54,11 +52,13 @@ my (
     $expr_converted
 );
 
-my $ERR_BLOCKED_MSG    = "Expression is in blocked list of conversion";
-my $ERR_SYNTAX_MSG     = "Expression is not in proper syntax";
-my $ERR_SUPPORT_MSG    = "Expression is not supported";
-my $ERR_OPERATOR_MSG   = "Operator used in expression is not supported";
-my $ERR_DATE_MSG       = "Date format is invaild";
+my $ERR_CSEC_BLOCKED_MSG        = "Conversion of client security expression is not supported";
+my $ERR_FILE_BLOCKED_MSG        = "Conversion of file system based expression is not supported";
+my $ERR_SYNTAX_MSG         = "Expression is not in proper syntax";
+my $ERR_SUPPORT_MSG        = "Expression is not supported";
+my $ERR_OPERATOR_MSG       = "Operator used in expression is not supported";
+my $ERR_DATE_MSG           = "Date format is invaild";
+my $ERR_CONVERTED_EXP_LEN  = "Converted expression length is more than 1499 characters";
 
 # List of classic expressions that are convertable
 my %EXPR_LIST=(
@@ -155,26 +155,16 @@ my %EXPR_LIST=(
 );
 
 # List of classic expressions that are not convertable
-my @BLOCKED_LIST=(
+my @CSEC_BLOCKED_LIST=(
     'CLIENT.APPLICATION',
     'CLIENT.FILE',
     'CLIENT.OS',
     'CLIENT.REG',
     'CLIENT.SVC',
-    'FS.COMMAND',
-    'FS.DIR',
-    'FS.DOMAIN',
-    'FS.FILE',
-    'FS.PATH',
-    'FS.SERVER',
-    'FS.SERVERIP',
-    'FS.SERVICE',
-    'FS.USER',
     'f_5_TrendMicroOfficeScan_7_3',
     'f_5_sygate_5_6',
     'f_5_zonealarm_6_5',
     's_5_norton',
-    's_farclient',
     'v_5_McAfeevirusscan_11',
     'v_5_Mcafee',
     'v_5_Symantec_10',
@@ -185,6 +175,22 @@ my @BLOCKED_LIST=(
     'v_5_sophos_4',
     'v_5_sophos_5',
     'v_5_sophos_6',
+);
+
+my @FILE_BLOCKED_LIST=(
+    'FS.COMMAND',
+    'FS.DIR',
+    'FS.DOMAIN',
+    'FS.FILE',
+    'FS.PATH',
+    'FS.SERVER',
+    'FS.SERVERIP',
+    'FS.SERVICE',
+    'FS.USER',
+);
+
+my @BLOCKED_LIST=(
+    's_farclient',
 );
 
 # List of command to do the conversion
@@ -228,7 +234,6 @@ getopts("e:", \%options) or usage();
 
 # If -e specified add dummy command to use the same code path to
 # convert
-$lineno = 0;
 $expression = $options{e};
 $line = qq/add policy expression test "$expression"/;
 $classic = $line;
@@ -238,10 +243,6 @@ if ($expr_converted == 0) {
   print_it($LFILE,"INFO: Expression is not converted - most likely it is a valid advanced expression\n");
 }
 
-if ($#maxlen_warn >= 0) {
-  print_it($LFILE,"WARNING: Total number of warnings due to expressions length greater than 8191 characters: ".($#maxlen_warn+1)."\n");
-  print_it($LFILE,"WARNING: Line numbers which has more than 8191 characters length: ".join(', ',@maxlen_warn)."\n");
-}
 if (defined $LFILE) {
   print_it($LFILE,"OUTPUT: New configuration file created: $ncfg\n");
   print_it($LFILE,"OUTPUT: New warning file created: $wf\n");
@@ -300,11 +301,28 @@ sub convertExpression
         err_handle $ERR_SUPPORT_MSG;
         return;
     }
+    # Check for client security expression expressions
+    foreach (@CSEC_BLOCKED_LIST) {
+        if ($expression  =~ /$_/i) {
+            print_it($LFILE,"$line\n");
+            err_handle $ERR_CSEC_BLOCKED_MSG;
+            return;
+        }
+    }
+    # Check for file system based expression expressions
+    foreach (@FILE_BLOCKED_LIST) {
+        if ($expression  =~ /$_/i) {
+            print_it($LFILE,"$line\n");
+            err_handle $ERR_FILE_BLOCKED_MSG;
+            return;
+        }
+    }
     # Check for blocked expressions
     foreach (@BLOCKED_LIST) {
         if ($expression  =~ /$_/i) {
+            my $err_msg = "Conversion of $_ expression is not supported";
             print_it($LFILE,"$line\n");
-            err_handle $ERR_BLOCKED_MSG;
+            err_handle $err_msg;
             return;
         }
     }
@@ -348,14 +366,12 @@ sub convertExpression
         }
     }
 SKIP:
-    if (length($classic) > 1100) {
-        my $dl = length($classic)-length($line);
-        if ($dl > 300) {
-            push @maxlen_warn, $lineno;
-      }
-  }
   #Removing the dummy expression created for -e
   $classic =~ s/^\badd\b\s*\bpolicy\b\s*\bexpression\b\s*\btest\b\s*//;
+  if (($expr_converted == 1) && (length($classic) > 1499)) {
+      err_handle $ERR_CONVERTED_EXP_LEN;
+      return;
+  }
   print_it($LFILE,"$classic\n");
 }
 
@@ -1100,7 +1116,7 @@ sub parseNetmask {
 # Subroutine for usage or help
 sub usage {
 	print "Usage: nspepi -e \"classic expression\"\n";
-	print "Max expression length = 8191\n\n";
+	print "Max expression length = 1499\n\n";
 	print "Output format:\n\n";
 	print "\t<Converted advanced expression>\n";
 	exit;
