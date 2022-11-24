@@ -152,6 +152,8 @@ my %EXPR_LIST=(
     "DAYOFWEEK "                            ,       'Type=9;expr=SYS.TIME.WEEKDAY',
     "DATE "                                 ,       'Type=10;expr=SYS.TIME',
     "TIME "                                 ,       'Type=11;expr=SYS.TIME',
+    "URLTOKENS"                             ,       'Type=15;expr=HTTP.REQ.URL.SET_TEXT_MODE(NOURLENCODED)',
+    "REQ.HTTP.URLTOKENS"                    ,       'Type=15;expr=HTTP.REQ.URL.SET_TEXT_MODE(NOURLENCODED)',
 );
 
 # List of classic expressions that are not convertable
@@ -607,13 +609,13 @@ sub identifyExpressions
                     my $ARG = extractArgument();
                     my $last_index_of_slash = rindex($ARG, "/");
                     my $url_after_last_slash = substr($ARG, $last_index_of_slash + 1);
-                    if (($url_after_last_slash eq '') || (($url_after_last_slash !~ /\*/) && ($url_after_last_slash !~ /\./))) {
+                    my $last_char = substr($ARG, -1);
+                    if (($url_after_last_slash eq '') || (($url_after_last_slash !~ /\./) && (($url_after_last_slash !~ /\*/) || ($last_char ne '*')))) {
                         $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.$ARG.'.'.$qu.' + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
                     } else {
                         $advanced = 'HTTP.REQ.URL.PATH.EQ('.$qu.$ARG.$qu.')';
-                        my $last_char = substr($ARG, -1);
                         if ($last_char eq '.') {
-                            # No need to do anything.
+                            $advanced = 'false';
                         } elsif ($last_char eq '*') {
                             my $last_str = substr($ARG, -3);
                             if ($last_str eq '*.*') {
@@ -621,7 +623,7 @@ sub identifyExpressions
                             } else {
                                 $last_str = substr($ARG, -2);
                                 if ($last_str eq '.*') {
-                                    $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.substr($ARG, 0, -1).$qu.'+ HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
+                                    $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.substr($ARG, 0, -1).$qu.' + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
                                 } elsif ($ARG eq '/*') {
                                     $advanced = 'true';
                                 } else {
@@ -629,19 +631,14 @@ sub identifyExpressions
                                 }
                             }
                         } else {
-                            my $last_index_of_dot = rindex($url_after_last_slash, ".");
-                            if ($last_index_of_dot != -1) {
-                                $last_index_of_dot = rindex($ARG, ".");
-                                my $prefix = substr($ARG, 0, $last_index_of_dot);
-                                my $prefix_last_char = substr($prefix, -1);
-                                my $suffix = substr($ARG, $last_index_of_dot + 1);
-                                if ($prefix eq "/") {
-                                    $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.'/.'.$qu.'+ HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
-                                } elsif ($prefix_last_char eq "*") {
-                                    $advanced = '(HTTP.REQ.URL.PATH.STARTSWITH('.$qu.substr($prefix, 0, -1).$qu.') && HTTP.REQ.URL.SUFFIX.EQ('.$qu.$suffix.$qu.'))';
-                                }
-                            } else {
-                                $advanced = 'HTTP.REQ.URL.PATH.EQ(('.$qu.$ARG.'.'.$qu.'+ HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS('.$qu.'.'.$qu.'))';
+                            my $last_index_of_dot = rindex($ARG, ".");
+                            my $prefix = substr($ARG, 0, $last_index_of_dot);
+                            my $prefix_last_char = substr($prefix, -1);
+                            my $suffix = substr($ARG, $last_index_of_dot + 1);
+                            if ($prefix eq "/") {
+                                $advanced = 'HTTP.REQ.URL.SUFFIX.EQ('.$qu.$suffix.$qu.')';
+                            } elsif ($prefix_last_char eq "*") {
+                                $advanced = '(HTTP.REQ.URL.PATH.STARTSWITH('.$qu.substr($prefix, 0, -1).$qu.') && HTTP.REQ.URL.SUFFIX.EQ('.$qu.$suffix.$qu.'))';
                             }
                         }
                     }
@@ -846,6 +843,35 @@ sub identifyExpressions
                 return;
             }
         }
+        #15) URLTOKENS Based Expressions. Example: "URLTOKENS == \'+,?,%,!,=,&\'"
+        case 15 {
+            if ($expr_params =~ /^\s*(\S+)\s*(.*)$/s) {
+                my $OPERATOR = $1;
+                $expr_params = $2;
+                $expr_params =~ s/[\\\']//g;
+                my $token_adv_expr = $advanced;
+                my @all_tokens = split(',', $expr_params);
+                my $add_or_op = 0;
+                for my $token (@all_tokens)
+                {
+                    my $expr = $token_adv_expr.'.CONTAINS('.$qu.$token.$qu.')';
+                    if ($add_or_op) {
+                        $advanced = $advanced." || ".$expr;
+                    } else {
+                        $advanced = $expr;
+                        $add_or_op = 1;
+                    }
+                }
+                $advanced = "(".$advanced.")";
+                if ($OPERATOR eq '!=') {
+                    $advanced = $advanced.".NOT";
+                }
+                return;
+            } else {
+                err_handle $ERR_SYNTAX_MSG;
+                return;
+            }
+        }
     }
 }
 
@@ -925,7 +951,7 @@ sub parseTextOperator
         }
         case /CONTAINS$/i {
             my $ARG = extractArgument();
-            my $advanced2 ='.CONTAINS('.$qu.$ARG.$qu.')';
+            my $advanced2 ='.SET_TEXT_MODE(IGNORECASE).CONTAINS('.$qu.$ARG.$qu.')';
             my $flag = 0;
             # To handle the LENGTH and OFFSET params.
 LEN_OR_OFF:

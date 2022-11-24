@@ -887,6 +887,10 @@ class ConvertConfig(object):
 class CacheRedirection(ConvertConfig):
     """ Handle CR feature """
 
+    # List of the CR vserver name for which
+    # precedence parameter is set to URL.
+    _cr_vserver_info_precedence = []
+
     # Classic built-in policy names and there corresponding
     # advanced built-in policy names.
     built_in_policies = {
@@ -921,6 +925,13 @@ class CacheRedirection(ConvertConfig):
 
         crv_name = commandParseTree.positional_value(0).value
         vserver_protocol_dict[crv_name] = cr_protocol.upper()
+
+        # Remove precedence parameter as it has no effect
+        # on advanced expression.
+        if commandParseTree.keyword_exists('precedence'):
+            commandParseTree.remove_keyword('precedence')
+            CacheRedirection._cr_vserver_info_precedence.append(crv_name)
+
         return [commandParseTree]
 
     @common.register_for_cmd("add", "cr", "policy")
@@ -1797,6 +1808,8 @@ class ContentSwitching(ConvertConfig):
 
     # override
     bind_default_goto = None
+    # Maximum possible URL values
+    MAX_URL_PRIORITY_CASE = 8
 
     def __init__(self):
         """
@@ -1805,11 +1818,10 @@ class ContentSwitching(ConvertConfig):
                             key - policy name
                             value - dictionary with the following keys:
                                     "policy_tree" - Policy tree without action
-                                    "bind_trees" - List of bind trees where
-                                                   the corresponding policy is
-                                                   bound.
         _cs_vserver_info_ci - List of the CS vserver name for which
                               caseSensitive parameter is set to OFF.
+        _cs_vserver_info_precedence - List of the CS vserver name for which
+                                      precedence parameter is set to URL.
         _policy_url_info - Contains information about classic policies
                            using url parameter.
                            key - policy name
@@ -1818,10 +1830,16 @@ class ContentSwitching(ConvertConfig):
                                    be used if the policy is bound to
                                    any CS vserver for which caseSensitive
                                    parameter is set to OFF.
+        _cs_policy_binding_info - Contains information about classic policies
+                                  bindings to the CS or CR vservers
+                                  key - vserver name
+                                  value - List of the policy binding tree
         """
         self._policy_bind_info = OrderedDict()
         self._cs_vserver_info_ci = []
+        self._cs_vserver_info_precedence = []
         self._policy_url_info = OrderedDict()
+        self._cs_policy_binding_info = OrderedDict()
 
     @common.register_for_cmd("add", "cs", "vserver")
     def convert_cs_vserver(self, commandParseTree):
@@ -1846,6 +1864,12 @@ class ContentSwitching(ConvertConfig):
         if commandParseTree.keyword_exists('caseSensitive'):
             commandParseTree.remove_keyword('caseSensitive')
             self._cs_vserver_info_ci.append(csv_name)
+
+        # Remove precedence parameter as it has no effect
+        # on advanced expression.
+        if commandParseTree.keyword_exists('precedence'):
+            commandParseTree.remove_keyword('precedence')
+            self._cs_vserver_info_precedence.append(csv_name)
 
         commandParseTree = ContentSwitching.convert_adv_expr_list(
                             commandParseTree, ["Listenpolicy", "pushLabel"])
@@ -1889,26 +1913,33 @@ class ContentSwitching(ConvertConfig):
             commandParseTree = ContentSwitching.convert_adv_expr_list(
                                 commandParseTree, ["rule"])
             return [commandParseTree]
+
+        is_rule = False
+        is_url = False
+        is_domain = False
+        url_priority = 0
         if commandParseTree.keyword_exists('rule'):
+            is_rule = True
             if commandParseTree.keyword_exists('domain'):
-                    rule_node = commandParseTree.keyword_value('rule')
-                    rule_expr = rule_node[0].value
-                    converted_expr = convert_classic_expr.convert_classic_expr(
-                        rule_expr)
-                    if converted_expr is None:
-                        logging.error('Error in converting command : ' +
-                                      str(commandParseTree).strip())
-                        return [commandParseTree]
-                    converted_expr = converted_expr.strip('"')
-                    domain_name = commandParseTree.keyword_value('domain')[0] \
-                        .value
-                    domain_rule = 'HTTP.REQ.HOSTNAME.EQ(\\"' + \
-                        domain_name + '\\")'
-                    commandParseTree.remove_keyword('domain')
-                    complete_expr = '"(' + converted_expr + ') && ' + \
-                        domain_rule + '"'
-                    rule_node[0].set_value(complete_expr, True)
-                    commandParseTree.set_upgraded()
+                is_domain = True
+                rule_node = commandParseTree.keyword_value('rule')
+                rule_expr = rule_node[0].value
+                converted_expr = convert_classic_expr.convert_classic_expr(
+                    rule_expr)
+                if converted_expr is None:
+                    logging.error('Error in converting command : ' +
+                                  str(commandParseTree).strip())
+                    return [commandParseTree]
+                converted_expr = converted_expr.strip('"')
+                domain_name = commandParseTree.keyword_value('domain')[0] \
+                    .value
+                domain_rule = 'HTTP.REQ.HOSTNAME.EQ(\\"' + \
+                    domain_name + '\\")'
+                commandParseTree.remove_keyword('domain')
+                complete_expr = '"(' + converted_expr + ') && ' + \
+                    domain_rule + '"'
+                rule_node[0].set_value(complete_expr, True)
+                commandParseTree.set_upgraded()
             else:
                 commandParseTree = ContentSwitching \
                     .convert_keyword_expr(commandParseTree, 'rule')
@@ -1924,63 +1955,73 @@ class ContentSwitching(ConvertConfig):
             append_start_expr = True
             url_expr = commandParseTree.keyword_value('url')[0].value
             last_url_expr = url_expr.rsplit('/', 1)
+            url_priority = 1
+            is_url = True
             converted_url_expr = 'EQ("' + \
                 url_expr + '")'
             if ((last_url_expr[1] == '') or
                 (('.' not in last_url_expr[1]) and
-                ('*' not in last_url_expr[1]))):
+                (('*' not in last_url_expr[1]) or
+                (not last_url_expr[1].endswith('*'))))):
                 converted_url_expr = 'EQ(("' + \
                     url_expr + '." + HTTP.REQ.URL.SUFFIX).' + \
                     'STRIP_END_CHARS("."))'
+                url_priority = 4
             elif url_expr.endswith('.'):
-                converted_url_expr = 'EQ("' + \
-                    url_expr + '")'
+                converted_url_expr = 'false'
+                converted_url_expr_ci = 'false'
+                append_start_expr = False
+                url_priority = 8
             elif url_expr.endswith('*'):
                 if (url_expr[-3:] == '*.*'):
                     converted_url_expr = 'STARTSWITH("' + \
                         url_expr[0: -3] + '")'
+                    url_priority = 6
                 elif (url_expr[-2:] == '.*'):
                     converted_url_expr = 'EQ(("' + \
                         url_expr[0:-1] + \
                         '" + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS("."))'                       
+                    url_priority = 5
                 elif (url_expr == '/*'):
                     converted_url_expr = 'true'
                     append_start_expr = False
+                    url_priority = 7
                 else:
                     converted_url_expr =  'STARTSWITH("' + \
                         url_expr[0:-1] + '")'
+                    url_priority = 6
             else:
-                prefix_suffix = last_url_expr[1].rsplit('.', 1)
-                if len(prefix_suffix) is 1:
-                    converted_url_expr = 'EQ(("' + \
-                        url_expr + \
-                        '." + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS("."))'                       
-                else:
-                    """ Suffix is present in URL."""
-                    prefix_suffix = url_expr.rsplit('.', 1)
-                    prefix = prefix_suffix[0]
-                    suffix = prefix_suffix[1]
-                    if prefix == '/':
-                        converted_url_expr = 'EQ(("/."' + \
-                            ' + HTTP.REQ.URL.SUFFIX).STRIP_END_CHARS(' + \
-                            '"."))'
-                    elif prefix.endswith('*'):
-                        converted_url_expr = '(HTTP.REQ.URL.PATH.STARTSWITH' + \
-                            '("' + prefix[0:-1] + \
-                            '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
-                            suffix + '"))'
-                        converted_url_expr_ci = '(HTTP.REQ.URL.PATH.' + \
-                            'SET_TEXT_MODE(IGNORECASE).STARTSWITH' + \
-                            '("' + prefix[0:-1] + \
-                            '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
-                            suffix + '"))'
-                        append_start_expr = False
+                """ Suffix is present in URL."""
+                prefix_suffix = url_expr.rsplit('.', 1)
+                prefix = prefix_suffix[0]
+                suffix = prefix_suffix[1]
+                if prefix == '/':
+                    suffix_url_expr_1 = 'HTTP.REQ.URL.SUFFIX.'
+                    suffix_url_expr_2 = 'EQ("' + suffix + '")'
+                    converted_url_expr = suffix_url_expr_1 + suffix_url_expr_2
+                    converted_url_expr_ci = suffix_url_expr_1 + \
+                        'SET_TEXT_MODE(IGNORECASE).' + suffix_url_expr_2
+                    append_start_expr = False
+                    url_priority = 3
+                elif prefix.endswith('*'):
+                    converted_url_expr = '(HTTP.REQ.URL.PATH.STARTSWITH' + \
+                        '("' + prefix[0:-1] + \
+                        '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
+                        suffix + '"))'
+                    converted_url_expr_ci = '(HTTP.REQ.URL.PATH.' + \
+                        'SET_TEXT_MODE(IGNORECASE).STARTSWITH' + \
+                        '("' + prefix[0:-1] + \
+                        '") && HTTP.REQ.URL.SUFFIX.EQ("' + \
+                        suffix + '"))'
+                    append_start_expr = False
+                    url_priority = 2
 
             if append_start_expr:
+                converted_url_expr_ci = start_expr_ci + converted_url_expr
                 converted_url_expr = start_expr +  converted_url_expr
-                converted_url_expr_ci = start_expr_ci +  converted_url_expr
 
             if commandParseTree.keyword_exists('domain'):
+                is_domain = True
                 domain_name = commandParseTree.keyword_value('domain')[0] \
                     .value
                 domain_rule = 'HTTP.REQ.HOSTNAME.EQ("' + domain_name + '")'
@@ -1996,6 +2037,7 @@ class ContentSwitching(ConvertConfig):
             if converted_url_expr_ci is not None:
                 self._policy_url_info[policy_name] = converted_url_expr_ci
         elif commandParseTree.keyword_exists('domain'):
+            is_domain = True
             domain_name = commandParseTree.keyword_value('domain')[0].value
             domain_rule = 'HTTP.REQ.HOSTNAME.EQ("' + domain_name + '")'
             commandParseTree.remove_keyword('domain')
@@ -2010,6 +2052,12 @@ class ContentSwitching(ConvertConfig):
             self._policy_bind_info[policy_name] = {}
             self._policy_bind_info[policy_name]["policy_tree"] = \
                 commandParseTree
+            policy_info = {}
+            policy_info["is_url"] = is_url
+            policy_info["is_rule"] = is_rule
+            policy_info["is_domain"] = is_domain
+            policy_info["url_priority"] = url_priority
+            self._policy_bind_info[policy_name]["policy_info"] = policy_info
             return []
         else:
             pol_obj.policy_type = "advanced"
@@ -2034,11 +2082,12 @@ class ContentSwitching(ConvertConfig):
         policy_type = common.pols_binds.get_policy(policy_name).module
         if policy_type == class_name:
             if policy_name in self._policy_bind_info:
+                cs_vserver_name = commandParseTree.positional_value(0).value
                 # Saving bind commands for resolving multiple bind points for
                 # CS policies without action issue.
-                if "bind_trees" not in self._policy_bind_info[policy_name]:
-                    self._policy_bind_info[policy_name]["bind_trees"] = []
-                self._policy_bind_info[policy_name]["bind_trees"].append(
+                if cs_vserver_name not in self._cs_policy_binding_info:
+                    self._cs_policy_binding_info[cs_vserver_name] = []
+                self._cs_policy_binding_info[cs_vserver_name].append(
                                                         commandParseTree)
                 return []
             else:
@@ -2077,11 +2126,12 @@ class ContentSwitching(ConvertConfig):
         """
         policy_type = self.__class__.__name__
         if policy_name in self._policy_bind_info:
+            cs_vserver_name = commandParseTree.positional_value(0).value
             # Saving bind commands for resolving multiple bind points for
             # CS policies without action issue.
-            if "bind_trees" not in self._policy_bind_info[policy_name]:
-                self._policy_bind_info[policy_name]["bind_trees"] = []
-            self._policy_bind_info[policy_name]["bind_trees"].append(
+            if cs_vserver_name not in self._cs_policy_binding_info:
+                self._cs_policy_binding_info[cs_vserver_name] = []
+            self._cs_policy_binding_info[cs_vserver_name].append(
                                                     commandParseTree)
             return []
         else:
@@ -2117,23 +2167,23 @@ class ContentSwitching(ConvertConfig):
         overlength_policy_names = {}
         overlength_action_counter = 0
         overlength_policy_counter = 0
-        for policy_name in self._policy_bind_info:
-            policy_tree = self._policy_bind_info[policy_name]["policy_tree"]
-            if "bind_trees" not in self._policy_bind_info[policy_name]:
-                # when policy is not used in any bind command.
-                pol_list.append(policy_tree)
-                continue
-            for index in range(len(self._policy_bind_info[policy_name][
-                                                    "bind_trees"])):
+        cs_cr_vserver_bindings = {}
+        used_policy_names = []
+        for cs_policy_bind_trees in self._cs_policy_binding_info.values():
+            for bind_tree in cs_policy_bind_trees:
                 vserver_name = ""
-                cs_vserver_name = ""
-                bind_tree = self._policy_bind_info[policy_name][
-                    "bind_trees"][index]
+                cs_cr_vserver_name = ""
+                is_cs_vserver = False
+                policy_name = bind_tree.keyword_value('policyName')[0].value
+                if policy_name not in used_policy_names:
+                    used_policy_names.append(policy_name)
+                policy_tree = self._policy_bind_info[policy_name]["policy_tree"]
+                cs_cr_vserver_name = bind_tree.positional_value(0).value
                 if ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cs vserver"):
                     vserver_name = bind_tree.keyword_value(
                         "targetLBVserver")[0].value
-                    cs_vserver_name = bind_tree.positional_value(0).value
+                    is_cs_vserver = True
                 elif ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cr vserver"):
                     vserver_name = bind_tree.keyword_value(
@@ -2146,7 +2196,7 @@ class ContentSwitching(ConvertConfig):
                 # with URL parameter, then add '_ci' suffix in the
                 # new policy name and rule of that policy should
                 # do case-insensitive search.
-                if ((cs_vserver_name in self._cs_vserver_info_ci) and
+                if (is_cs_vserver and (cs_cr_vserver_name in self._cs_vserver_info_ci) and
                     (policy_name in self._policy_url_info)):
                     new_policy_name += '_ci'
                     set_ci_rule = True
@@ -2209,9 +2259,6 @@ class ContentSwitching(ConvertConfig):
                             new_policy_name]
                 # Remove targetLBVserver from bind command and update policy
                 # name to newly added policy name.
-                priority_arg = "priority"
-                goto_arg = "gotoPriorityExpression"
-                policy_type = self.__class__.__name__
                 self.update_tree_arg(bind_tree, "policyName",
                                      truncated_pol_name)
                 if ((' '.join(bind_tree.get_command_type())).lower() ==
@@ -2224,9 +2271,30 @@ class ContentSwitching(ConvertConfig):
                     # bind cr vserver <vserver> -policyName <policy name>
                     #                                       <vserver name>
                     bind_tree.remove_keyword_value("policyName", 1)
-                self.convert_entity_policy_bind(
-                    bind_tree, bind_tree, policy_name,
-                    policy_type, priority_arg, goto_arg)
+
+                if cs_cr_vserver_name not in cs_cr_vserver_bindings:
+                    cs_cr_vserver_bindings[cs_cr_vserver_name] = [[], [], [], [], []]
+
+                self.handle_cs_policy_bind_order(bind_tree, cs_cr_vserver_name,
+                        policy_name, cs_cr_vserver_bindings, is_cs_vserver)
+
+        for policy_name in self._policy_bind_info:
+            if policy_name not in used_policy_names:
+                # when policy is not used in any bind command.
+                pol_list.append(self._policy_bind_info[policy_name]["policy_tree"])
+
+        priority_arg = "priority"
+        goto_arg = "gotoPriorityExpression"
+        policy_type = self.__class__.__name__
+        for vs_binding_list in cs_cr_vserver_bindings.values():
+            for list_1 in vs_binding_list:
+                for list_2 in list_1:
+                    for list_3 in list_2:                       
+                        # list_3 contains policy_name and
+                        # bind command parse tree
+                        self.convert_entity_policy_bind(
+                            list_3[0], list_3[0], list_3[1],
+                            policy_type, priority_arg, goto_arg)
         return act_list + pol_list
 
     def truncate_name(self, name, name_mapping, counter):
@@ -2244,6 +2312,95 @@ class ContentSwitching(ConvertConfig):
         truncated_name += "_" + str(counter)
         name_mapping[name] = truncated_name
         return truncated_name, counter
+
+    def handle_cs_policy_bind_order(self, bind_tree, vserver_name, policy_name,
+                                    cs_cr_vserver_bindings, is_cs_vserver):
+        """
+        Store the CS policy binding information based on the precedence order.
+        Arguments:
+            bind_tree - bind command parse tree.
+            vserver_name - CS or CR vserver's name.
+            policy_name - policy which is bound to the vserver.
+            cs_cr_vserver_bindings - dictionary to save the policy bindings
+                in the precedence order.
+            is_cs_vserver - True if the policy is bound to CS vserver,
+                otherwise False.
+        """
+
+        """
+        If the precedence value is set to URL, then URL based policies are evaluated
+        first than RULE based CS policies, otherwise RULE based polcices
+        take precedence over URL based policies.
+        For URL precedence, policies are evaluated in the following order:
+        1. Domain and URL
+        2. Domain
+        3. URL
+        4. Domain and Rule
+        5. Rule
+
+        For RULE precedence, policies are evaluated in the following order:
+        1. Domain and RULE
+        2. RULE
+        3. DOMAIN and URL
+        4. DOMAIN
+        5. URL
+
+        With-in URL based policies, precedence is determined by the URL's field value.
+        Generally, URL based policies are evaluated in this order:
+        1. Exact URL
+        2. Prefix and Suffix
+        3. Suffix only
+        4. Prefix only
+        5. Defaut (e.g "/*")
+        """
+        if ((is_cs_vserver and (vserver_name in self._cs_vserver_info_precedence)) or
+            ((not is_cs_vserver) and
+            (vserver_name in CacheRedirection._cr_vserver_info_precedence))):
+            is_rule_precedence = False
+        else:
+            is_rule_precedence = True
+
+        store_info = [bind_tree, policy_name]
+        policy_info = self._policy_bind_info[policy_name]["policy_info"]
+        is_rule = policy_info["is_rule"]
+        is_domain = policy_info["is_domain"]
+        is_url = policy_info["is_url"]
+        url_priority = policy_info["url_priority"]
+        order_index = 0
+        if is_rule_precedence:
+            if is_rule and is_domain:
+                order_index = 0
+            elif is_rule:
+                order_index = 1
+            elif is_domain and is_url:
+                order_index = 2
+            elif is_domain:
+                order_index = 3
+            elif is_url:
+                order_index = 4
+        else:
+            if is_domain and is_url:
+                order_index = 0
+            elif is_domain and not is_rule:
+                order_index = 1
+            elif is_url:
+                order_index = 2
+            elif is_rule and is_domain:
+                order_index = 3
+            elif is_rule:
+                order_index = 4
+
+        if len(cs_cr_vserver_bindings[vserver_name][order_index]) == 0:
+            if is_url:
+                for i in range(ContentSwitching.MAX_URL_PRIORITY_CASE):
+                    cs_cr_vserver_bindings[vserver_name][order_index].append([])
+            else:
+                    cs_cr_vserver_bindings[vserver_name][order_index].append([])
+
+        if is_url:
+            cs_cr_vserver_bindings[vserver_name][order_index][url_priority - 1].append(store_info)
+        else:
+            cs_cr_vserver_bindings[vserver_name][order_index][url_priority].append(store_info)
 
 
 @common.register_class_methods
