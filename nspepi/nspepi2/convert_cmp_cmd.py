@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -195,9 +195,12 @@ class CMP(cli_cmds.ConvertConfig):
                 "disabled":
             logging.warning((
                 "Following bind command is commented out because"
-                " state is disabled. If command is required please take"
-                " a backup because comments will not be saved in ns.conf"
-                " after triggering 'save ns config': {}").
+                " state is disabled. If state is disabled, then command"
+                " is not in use. Since state parameter is not supported"
+                " with the advanced configuration, so if we convert this"
+                " config then functionality will change. If command is"
+                " required please take a backup because comments will"
+                " not be saved in ns.conf after triggering 'save ns config': {}").
                 format(str(bind_cmd_tree).strip())
             )
             return ["#" + str(bind_cmd_tree)]
@@ -401,12 +404,14 @@ class CMP(cli_cmds.ConvertConfig):
                     "is_advanced_policy_bound"]:
             # Comment the advanced policies that are bound.
             logging.warning(
-                "Bindings of advanced CMP policies to cmp global "
-                "are commented out, because initial global cmp parameter "
-                "is classic but advanced policies are bound. Now global "
-                "cmp parameter policy type is set to advanced. If commands "
-                "are required please take a backup because comments will "
-                "not be saved in ns.conf after triggering 'save ns config'."
+                "Initial global cmp parameter is classic and in this case "
+                "advanced policies's bindings are not evaluated. Now global cmp "
+                "parameter policy type is set to advanced, so existing "
+                "advanced policies's bindings will be evaluted and can change "
+                "the functionality. So, bindings of advanced CMP policies "
+                "to cmp global are commented out. If commands are required "
+                "please take a backup because comments will not be saved "
+                "in ns.conf after triggering 'save ns config'."
             )
             # Iterate in reverse order, since we will be removing
             # elements from list.
@@ -424,13 +429,14 @@ class CMP(cli_cmds.ConvertConfig):
                 "is_classic_policy_bound"]:
             # Comment the classic policies that are bound.
             logging.warning(
-                "Bindings of classic CMP policies to cmp global "
-                "are commented out, because initial global cmp parameter "
-                "is advanced but classic policies are bound. Now all "
-                "classic CMP policies are converted to advanced. If "
-                "commands are required please take a backup because comments "
-                "will not be saved in ns.conf after triggering "
-                "'save ns config'."
+                "Initial global cmp parameter is advanced and in this case "
+                "classic policies's bindings are not evaluated. Now all classic CMP "
+                "policies are converted to advanced, so converted policies's "
+                "bindings will be evaluated and can change the functionality. So "
+                "bindings of classic CMP policies to cmp global are commented "
+                "out. If commands are required please take a backup "
+                "because comments will not be saved in ns.conf after "
+                "triggering 'save ns config'."
             )
             # Iterate in reverse order, since we will be removing
             # elements from list.

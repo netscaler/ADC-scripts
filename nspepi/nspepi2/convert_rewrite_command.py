@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -95,15 +95,19 @@ class Rewrite(cli_cmds.ConvertConfig):
         module = self.__class__.__name__
         priority_arg = 1
         goto_arg = 2
-        if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-            # Set below flags only if added vserver is of HTTP/SSL protocol
-            if get_bind_type in ("REQ_OVERRIDE", "REQ_DEFAULT"):
-                Rewrite.rw_req_global_goto_exists = True
-            elif get_bind_type in ("RES_OVERRIDE", "RES_DEFAULT"):
-                Rewrite.rw_req_global_goto_exists = True
-        self.convert_global_bind(
-            tree, tree, policy_name, module, priority_arg, goto_arg)
-        return []
+        bind_type_to_check = ["REQ_OVERRIDE", "REQ_DEFAULT",
+            "RES_OVERRIDE", "RES_DEFAULT"]
+        if get_bind_type in bind_type_to_check:
+            if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
+                # Set below flags only if added vserver is of HTTP/SSL protocol
+                if get_bind_type in ("REQ_OVERRIDE", "REQ_DEFAULT"):
+                    Rewrite.rw_req_global_goto_exists = True
+                else:
+                    Rewrite.rw_req_global_goto_exists = True
+            self.convert_global_bind(
+                tree, tree, policy_name, module, priority_arg, goto_arg)
+            return []
+        return [tree]
 
     @common.register_for_bind(["LB", "ContentSwitching", "CacheRedirection"])
     def convert_rewrite_vserver_bindings(
@@ -122,7 +126,7 @@ class Rewrite(cli_cmds.ConvertConfig):
         """
         get_goto_arg = bind_parse_tree.keyword_value(
             "gotoPriorityExpression")[0].value
-        vs_name = bind_parse_tree.positional_value(0).value
+        vs_name = bind_parse_tree.positional_value(0).value.lower()
         policy_name = bind_parse_tree.keyword_value("policyName")[0].value
         flow_type = bind_parse_tree.keyword_value("type")[0].value
         module = self.__class__.__name__
@@ -137,8 +141,9 @@ class Rewrite(cli_cmds.ConvertConfig):
                     Rewrite.rw_req_vserver_goto_exists = True
                 elif upper_flow_type == "RESPONSE":
                     Rewrite.rw_res_vserver_goto_exists = True
-        self.convert_entity_policy_bind(
-            bind_parse_tree, bind_parse_tree, policy_name,
-            module, priority_arg, goto_arg)
-        return []
+            self.convert_entity_policy_bind(
+                bind_parse_tree, bind_parse_tree, policy_name,
+                module, priority_arg, goto_arg)
+            return []
+        return [bind_parse_tree]
 

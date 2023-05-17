@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc. All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -923,7 +923,7 @@ class CacheRedirection(ConvertConfig):
         else:
             cr_protocol = commandParseTree.positional_value(1).value
 
-        crv_name = commandParseTree.positional_value(0).value
+        crv_name = commandParseTree.positional_value(0).value.lower()
         vserver_protocol_dict[crv_name] = cr_protocol.upper()
 
         # Remove precedence parameter as it has no effect
@@ -1197,12 +1197,16 @@ class TunnelTraffic(ConvertConfig):
         if (commandParseTree.keyword_exists("state") and
                 commandParseTree.keyword_value("state")[0].value.lower()
                 == "disabled"):
-            logging.warning("Following bind command is commented out because"
-                            " state is disabled. If command is required"
-                            " please take a backup because comments will"
-                            " not be saved in ns.conf after triggering"
-                            " 'save ns config': {}"
-                            "".format(str(commandParseTree).strip()))
+            logging.warning((
+                "Following bind command is commented out because"
+                " state is disabled. If state is disabled, then command"
+                " is not in use. Since state parameter is not supported"
+                " with the advanced configuration, so if we convert this"
+                " config then functionality will change. If command is"
+                " required please take a backup because comments will"
+                " not be saved in ns.conf after triggering 'save ns config': {}").
+                format(str(commandParseTree).strip())
+            )
             return ['#' + str(commandParseTree)]
 
         # Classic built-in policy bindings should be disabled
@@ -1426,12 +1430,15 @@ class APPFw(ConvertConfig):
         if (commandParseTree.keyword_exists("state") and
                 commandParseTree.keyword_value("state")[0].value.lower()
                 == "disabled"):
-            logging.warning("Following bind command is commented out because"
-                            " state is disabled. If command is required"
-                            " please take a backup because comments will"
-                            " not be saved in ns.conf after triggering"
-                            " 'save ns config': {}"
-                            "".format(str(commandParseTree).strip()))
+            logging.warning((
+                "Following bind command is commented out because"
+                " state is disabled. If state is disabled, then command"
+                " is not in use. Since state parameter is not supported"
+                " with the advanced configuration, so if we convert this"
+                " config then functionality will change. If command is"
+                " required please take a backup because comments will"
+                " not be saved in ns.conf after triggering 'save ns config': {}").
+                format(str(commandParseTree).strip()))
             return ['#' + str(commandParseTree)]
 
         priority_arg = 1
@@ -1856,7 +1863,7 @@ class ContentSwitching(ConvertConfig):
         else:
             cs_protocol = commandParseTree.positional_value(1).value
 
-        csv_name = commandParseTree.positional_value(0).value
+        csv_name = commandParseTree.positional_value(0).value.lower()
         vserver_protocol_dict[csv_name] = cs_protocol.upper()
 
         # Remove caseSensitive parameter as it has no effect
@@ -2181,8 +2188,11 @@ class ContentSwitching(ConvertConfig):
                 cs_cr_vserver_name = bind_tree.positional_value(0).value
                 if ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cs vserver"):
-                    vserver_name = bind_tree.keyword_value(
-                        "targetLBVserver")[0].value
+                    if bind_tree.keyword_exists("targetLBVserver"):
+                        vserver_name = bind_tree.keyword_value(
+                            "targetLBVserver")[0].value
+                    else:
+                        vserver_name = bind_tree.positional_value(1).value
                     is_cs_vserver = True
                 elif ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cr vserver"):
@@ -2263,7 +2273,10 @@ class ContentSwitching(ConvertConfig):
                                      truncated_pol_name)
                 if ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cs vserver"):
-                    bind_tree.remove_keyword("targetLBVserver")
+                    if bind_tree.keyword_exists("targetLBVserver"):
+                        bind_tree.remove_keyword("targetLBVserver")
+                    else:
+                        bind_tree.remove_positional(1)
                 elif ((' '.join(bind_tree.get_command_type())).lower() ==
                         "bind cr vserver"):
                     # In bind cr vserver command, vserver name exists in

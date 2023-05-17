@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -93,8 +93,28 @@ def convert_adv_expr(advanced_expr):
     expression should be replaced.
     Returns None in case of any Error. Otherwise returns converted expression.
     """
+    body_expr_without_arg = is_body_expr_without_arg_present(advanced_expr)
+    if body_expr_without_arg:
+        logging.error("Body size needs to process is not present "
+            "in HTTP.REQ.BODY expression, please privoide the body size.")
+        return None
     advanced_expr = convert_q_s_expr(advanced_expr)
     return convert_sys_eval_classic_expr(advanced_expr)
+
+def is_body_expr_without_arg_present(advanced_expr):
+    """
+    Checks that if the advanced expression contains
+    HTTP.REQ.BODY expression without argument
+    """
+    body_expr = re.compile(r'\bHTTP\s*\.\s*REQ\s*\.\s*BODY\b\s*', re.IGNORECASE)
+    expr_len = len(advanced_expr)
+    for match in re.finditer(body_expr, advanced_expr):
+        start_index = match.start()
+        length = match.end() - match.start()
+        if (((start_index + length) >= expr_len) or
+             (advanced_expr[start_index + length] != '(')):
+            return True
+    return False
 
 def convert_q_s_expr(advanced_expr):
    """

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -476,7 +476,19 @@ sub identifyExpressions
             if ($expr_params =~ /^(\S+)(\s+.*)$/s) {
                 $header_name=$1;
                 $expr_params=$2;
-                $advanced =~ s/"\$"/$qu$header_name$qu/;
+                my $hqe = "";
+                my $hqs = substr $header_name, 0, 1;
+                if ($hqs =~ /\"/) {
+                    $hqe = $hqs;
+                    $header_name = substr($header_name, length($hqs));
+                    $header_name = substr($header_name, 0, length($header_name) - length($hqe));
+                    $hqs = "\\\\\\\"";
+                    $hqe = $hqs;
+                }
+                else {
+                    $hqs = "";
+                }
+                $advanced =~ s/"\$"/$qu$hqs$header_name$hqe$qu/;
                 if ($expr_params =~ /^\s+(\S+)(\s*.*)$/s) {
                     $OPERATOR=$1;
                     $expr_params=$2;
@@ -576,7 +588,7 @@ sub identifyExpressions
                     $expr_params=$2;
                     #Convert netmask for Advanced syntax.
                     $netmask = parseNetmask($netmask);
-                    $advanced = $advanced.'.IN_SUBNET('.$ip_addr.'/'.$netmask.')';
+                    $advanced = ($netmask)? $advanced.'.IN_SUBNET('.$ip_addr.'/'.$netmask.')' : 'false';
                 }
                 else {
                     $advanced = $advanced.'.EQ('.$ip_addr.')';

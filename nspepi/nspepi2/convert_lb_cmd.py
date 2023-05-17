@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc. All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -90,7 +90,7 @@ class LB(cli_cmds.ConvertConfig):
                         || req.http.header hdr2 contents"
         """
         lb_protocol = add_lbvserver_parse_tree.positional_value(1).value
-        lbv_name = add_lbvserver_parse_tree.positional_value(0).value
+        lbv_name = add_lbvserver_parse_tree.positional_value(0).value.lower()
         cli_cmds.vserver_protocol_dict[lbv_name] = lb_protocol.upper()
         add_lbvserver_parse_tree = LB.convert_adv_expr_list(
                                        add_lbvserver_parse_tree, ["Listenpolicy", "resRule", "pushLabel"])
