@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -794,6 +794,15 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         if policy_type == "advanced":
             # Return same if policy_type is marked advanced
             return [bind_parse_tree]
+        vs_name = bind_parse_tree.positional_value(0).value.lower()
+        if cli_cmds.vserver_protocol_dict[vs_name] not in ("HTTP", "SSL"):
+            logging.error("Filter policy doesn't work with the non-http protocol"
+                          " type vsever. And, if we bind the converted advanced"
+                          " policy to the non-http vserver, then either the"
+                          " config will fail or the functionality will change,"
+                          " so please review and remove such config"
+                          " command [{}].".format(str(bind_parse_tree).strip()))
+            return ['#' + str(bind_parse_tree)]
         flow_type = ("RESPONSE" if (self._converted_pol_param[
             policy_name][0] == "resAction") else "REQUEST")
         bind_type = CLIKeywordParameter(CLIKeywordName("type"))
@@ -828,9 +837,12 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 "disabled":
             logging.warning((
                 "Following bind command is commented out because"
-                " state is disabled. If command is required please take"
-                " a backup because comments will not be saved in ns.conf"
-                " after triggering 'save ns config': {}").
+                " state is disabled. If state is disabled, then command"
+                " is not in use. Since state parameter is not supported"
+                " with the advanced configuration, so if we convert this"
+                " config then functionality will change. If command is"
+                " required please take a backup because comments will"
+                " not be saved in ns.conf after triggering 'save ns config': {}").
                 format(str(bind_parse_tree).strip())
             )
             return ["#" + str(bind_parse_tree)]
@@ -937,7 +949,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                     else:
                         self.modify_global_binding(rw, request_side_binding)
                 else:
-                    bind_cmd = self.return_bind_cmd_warning(rw)
+                    bind_cmd = self.return_bind_cmd_error(rw)
                     converted_list.append(bind_cmd)
             else:
                 self.complete_convert_bind_cmd(
@@ -957,7 +969,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
             cli_cmds.ConvertConfig.bind_default_goto = "END"
             if (responder_class.resp_global_goto_exists == True) or (
                  responder_class.resp_vserver_goto_exists == True):
-                bind_cmd = self.return_bind_cmd_warning(resp)
+                bind_cmd = self.return_bind_cmd_error(resp)
                 converted_list.append(bind_cmd)
             else:
                 self.complete_convert_bind_cmd(
@@ -965,8 +977,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                     goto_arg, position)
         return converted_list
 
-    def return_bind_cmd_warning(self, cmd):
-        # Return warnings and partially converted commented out bind command
+    def return_bind_cmd_error(self, cmd):
+        # Return an error and partially converted commented out bind command
         logging.error("In ns.conf, existing advanced feature policies's bind commands have"
               " gotoPriorityExpression as END/USE_INVOCATION_RESULT for HTTP/S."
               " Priorities and gotoPriorityExpression will need to"

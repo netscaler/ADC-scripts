@@ -1,10 +1,10 @@
 #!/usr/bin/perl
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
-$ENV{PATH} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin'.$ENV{PATH};
+$ENV{PATH} = '/var/python/bin:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin'.$ENV{PATH};
 
 use File::Basename;
 
@@ -51,8 +51,10 @@ my $invalid_config_file = $dir_path."/issues_".$filename;
 if (!(-z $invalid_config_file)) {
 	print "\nThe following configuration lines will get errors in 13.1 and both they and dependent configuration will be removed from the configuration:\n";
 	system("cat $invalid_config_file");
-	print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html. Use the latest tool version for the most complete and up-to-date version.\n";
+	print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html.\n";
+	print "\nNOTE: the nspepi tool doesn't convert the following configurations:\n\t1. SureConnect commands\n\t2. PriorityQueuing commands\n\t3. HTTP Denial of Service Protection commands\n\t4. Classic SSL commands\n\t5. HTMLInjection commands.\n";
 } else {
 	print "\nNo issue detected with the configuration.\n";
 }
+print "\nUse pre-validation tool and nspepi tool available at https://github.com/citrix/ADC-scripts/tree/master/nspepi for the most complete and up-to-date version.\n"
 ### End check_invalid_config script

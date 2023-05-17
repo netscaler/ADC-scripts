@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -84,14 +84,16 @@ class Responder(cli_cmds.ConvertConfig):
         priority_arg = 1
         goto_arg = 2
         position = "inplace"
-        if ((policy_name.lower() not in self._terminating_policy_list) and
-            (get_bind_type.upper() in ("REQ_OVERRIDE", "REQ_DEFAULT"))):
-             # Set below flags only if added vserver is of HTTP/SSL protocol
-             if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-                 Responder.resp_global_goto_exists = True
-        self.convert_global_bind(
-            tree, tree, policy_name, module, priority_arg, goto_arg, position)
-        return []
+        bind_type_to_check = ["REQ_OVERRIDE", "REQ_DEFAULT"]
+        if get_bind_type in bind_type_to_check:
+            if (policy_name.lower() not in self._terminating_policy_list):
+                 # Set below flags only if added vserver is of HTTP/SSL protocol
+                 if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
+                     Responder.resp_global_goto_exists = True
+            self.convert_global_bind(
+                tree, tree, policy_name, module, priority_arg, goto_arg, position)
+            return []
+        return [tree]
 
     @common.register_for_bind(["LB", "ContentSwitching", "CacheRedirection"])
     def convert_responder_vserver_bindings(
@@ -108,7 +110,7 @@ class Responder(cli_cmds.ConvertConfig):
         get_goto_arg = bind_parse_tree.keyword_value(
             "gotoPriorityExpression")[0].value
         policy_name = bind_parse_tree.keyword_value("policyName")[0].value
-        vs_name = bind_parse_tree.positional_value(0).value
+        vs_name = bind_parse_tree.positional_value(0).value.lower()
         module = self.__class__.__name__
         priority_arg = "priority"
         goto_arg = "gotoPriorityExpression"
@@ -117,8 +119,16 @@ class Responder(cli_cmds.ConvertConfig):
             if ((policy_name.lower() not in self._terminating_policy_list) and
                 (get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"))):
                  Responder.resp_vserver_goto_exists = True
-        self.convert_entity_policy_bind(
-            bind_parse_tree, bind_parse_tree, policy_name,
-            module, priority_arg, goto_arg)
-        return []
+
+            if not bind_parse_tree.keyword_exists('type'):
+                keyword_arg = CLIKeywordParameter(CLIKeywordName('type'))
+                keyword_arg.add_value('REQUEST')
+                bind_parse_tree.add_keyword(keyword_arg)
+                bind_parse_tree.set_upgraded()
+
+            self.convert_entity_policy_bind(
+                bind_parse_tree, bind_parse_tree, policy_name,
+                module, priority_arg, goto_arg)
+            return []
+        return [bind_parse_tree]
 
