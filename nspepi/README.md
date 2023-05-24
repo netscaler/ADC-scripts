@@ -31,6 +31,16 @@ For using the conversion tools, copy the files from here to your Citrix ADC appl
 3. Copy all files under the `nspepi2` directory to the `/netscaler/nspepi2` path in Citrix ADC.
 4. After copying files to Citrix ADC, change your directory to `/netscaler` and then run the `bash nspepi_install_script` command.
 
+### NSPEPI and check_invalid_config tools can be run on the CentOS and Ubuntu systems
+
+The following modules are the prerequisites for using these tools:
+
+- Python
+- Perl
+- Python pip module
+- Ply module for Python
+- Switch.pm for Perl
+
 ## Pre-validation tool for removed or deprecated features in Citrix ADC version 13.1
 
 This is a pre-validation tool to check if any deprecated functionality that is removed from Citrix ADC 13.1 is still used in the configuration for your current release. If the validation result shows usage of a deprecated functionality, then before upgrading your appliance, you must first modify the configuration to the Citrix recommended alternative. You can modify the configuration either manually or using the NSPEPI tool.

@@ -235,6 +235,7 @@ class CMP(cli_cmds.ConvertConfig):
         If bound policy is classic built-in policy, then replace policy name
         with advanced built-in policy.
         """
+        policy_name = policy_name.lower()
         if policy_name in self.built_in_policies:
             # Update policy name to advanced policy name.
             self.update_tree_arg(bind_cmd_tree, policy_arg,

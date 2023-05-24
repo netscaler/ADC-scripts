@@ -638,6 +638,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
            action_tree - stored action command at respective index in
                  _action_command
         """
+        cli_cmds.filter_policy_exists = True
         original_cmd = copy.deepcopy(policy_parse_tree)
         policyName = policy_parse_tree.positional_value(0).value
         pol_obj = common.Policy(policyName, self.__class__.__name__, "classic")

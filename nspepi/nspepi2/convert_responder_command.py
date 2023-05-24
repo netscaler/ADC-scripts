@@ -77,6 +77,11 @@ class Responder(cli_cmds.ConvertConfig):
               HTTP/SSL vservers
         tree - bind command parse tree
         """
+        # If no filter policy is configured, then no need to process
+        # responder bindings
+        if not cli_cmds.filter_policy_exists:
+            return [tree]
+
         get_goto_arg = tree.positional_value(2).value
         policy_name = tree.positional_value(0).value
         get_bind_type = tree.keyword_value("type")[0].value
@@ -107,6 +112,11 @@ class Responder(cli_cmds.ConvertConfig):
         When responder policy is bound:
         1. Check if GOTO is END/USE_INVOCATION_RESULT for HTTP/SSL vservers
         """
+        # If no filter policy is configured, then no need to process
+        # responder bindings
+        if not cli_cmds.filter_policy_exists:
+            return [bind_parse_tree]
+
         get_goto_arg = bind_parse_tree.keyword_value(
             "gotoPriorityExpression")[0].value
         policy_name = bind_parse_tree.keyword_value("policyName")[0].value
