@@ -33,11 +33,15 @@ def convert_cli_init():
     global cli_user_binds
     global cli_group_binds
     global cli_service_binds
+    global filter_policy_exists
     cli_global_binds = OrderedDict()
     cli_vserver_binds = OrderedDict()
     cli_user_binds = OrderedDict()
     cli_group_binds = OrderedDict()
     cli_service_binds = OrderedDict()
+    # filter_policy_exists would be true
+    # if any filter policy is configured.
+    filter_policy_exists = False
 
 
 def remove_quotes(val):
@@ -979,7 +983,7 @@ class CacheRedirection(ConvertConfig):
         if not bind_parse_tree.keyword_exists('policyName'):
             return [bind_parse_tree]
 
-        policy_name = bind_parse_tree.keyword_value("policyName")[0].value
+        policy_name = bind_parse_tree.keyword_value("policyName")[0].value.lower()
         priority_arg = "priority"
         goto_arg = "gotoPriorityExpression"
 
@@ -1071,7 +1075,7 @@ class TMSession(ConvertConfig):
 
     # classic built-in policy and its corresponding advanced built-in policy.
     built_in_policies = {
-        "SETTMSESSPARAMS_POL": "SETTMSESSPARAMS_ADV_POL"
+        "settmsessparams_pol": "SETTMSESSPARAMS_ADV_POL"
     }
 
     def __init__(self):
@@ -1130,9 +1134,10 @@ class TMSession(ConvertConfig):
         # TM session policy can be bound to aaa user, aaa group and
         # Authentication vserver.In all these bind commands, keyword used
         # for policy is "policy"
-        if policy_name in self.built_in_policies:
+        lower_policy_name = policy_name.lower()
+        if lower_policy_name in self.built_in_policies:
             self.update_tree_arg(commandParseTree, "policy",
-                                 self.built_in_policies[policy_name])
+                                 self.built_in_policies[lower_policy_name])
         return self.convert_entity_policy_bind(
             commandParseTree, commandParseTree,
             policy_name, policy_type, priority_arg, goto_arg)
@@ -1152,13 +1157,14 @@ class TMSession(ConvertConfig):
         if (common.pols_binds.get_policy(policy_name).module
                 != self.__class__.__name__):
             return [commandParseTree]
+        lower_policy_name = policy_name.lower()
         priority_arg = "priority"
         goto_arg = "gotoPriorityExpression"
         module = self.__class__.__name__
         # check for classic built-in policy
-        if policy_name in self.built_in_policies:
+        if lower_policy_name in self.built_in_policies:
             self.update_tree_arg(commandParseTree, "policyName",
-                                 self.built_in_policies[policy_name])
+                                 self.built_in_policies[lower_policy_name])
         return self.convert_global_bind(commandParseTree,
                                         commandParseTree, policy_name, module,
                                         priority_arg, goto_arg)
@@ -1178,7 +1184,7 @@ class TunnelTraffic(ConvertConfig):
         to
         add tunnel trafficPolicy <policy name> <advance rule> <action>
         """
-        policy_name = commandParseTree.positional_value(0).value
+        policy_name = commandParseTree.positional_value(0).value.lower()
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
         common.pols_binds.store_policy(pol_obj)
         commandParseTree = TunnelTraffic.convert_pos_expr(commandParseTree, 1)
@@ -1219,7 +1225,7 @@ class TunnelTraffic(ConvertConfig):
             "ns_tunnel_msdocs": "ns_adv_tunnel_msdocs"
         }
         policy_node = commandParseTree.positional_value(0)
-        policy_name = policy_node.value
+        policy_name = policy_node.value.lower()
         disabled_bind_list = []
         if policy_name in built_in_policies:
             disabled_classic_built_in_bind = copy.deepcopy(commandParseTree)
@@ -1400,6 +1406,11 @@ class VPN(ConvertConfig):
 class APPFw(ConvertConfig):
     """ Handle APPFw feature """
 
+    def __init__(self):
+        # _classic_policy_exists stores the information
+        # whether any classic AppFW policy is configured.
+        self._classic_policy_exists = False
+
     @common.register_for_cmd("add", "appfw", "policy")
     def convert_policy(self, commandParseTree):
         """Convert classic AppFw policy to advanced
@@ -1412,8 +1423,11 @@ class APPFw(ConvertConfig):
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
         common.pols_binds.store_policy(pol_obj)
         commandParseTree = APPFw.convert_pos_expr(commandParseTree, 1)
-        pol_obj.policy_type = ("classic"
-                               if commandParseTree.upgraded else "advanced")
+        if commandParseTree.upgraded:
+            pol_obj.policy_type = "classic"
+            self._classic_policy_exists = True
+        else:
+            pol_obj.policy_type = "advanced"
         return [commandParseTree]
 
     @common.register_for_cmd("bind", "appfw", "global")
@@ -1426,7 +1440,11 @@ class APPFw(ConvertConfig):
             [-state ( ENABLED | DISABLED )]
         """
 
-        # Remove bind command when state is disabled.
+        # If no classic AppFw policy is configured, then no need
+        # to process the bindings.
+        if not self._classic_policy_exists:
+            return [commandParseTree]
+ 
         if (commandParseTree.keyword_exists("state") and
                 commandParseTree.keyword_value("state")[0].value.lower()
                 == "disabled"):
@@ -1464,6 +1482,11 @@ class APPFw(ConvertConfig):
                        It will be either positional index or keyword name.
         Returns converted list of parse trees.
         """
+        # If no classic AppFw policy is configured, then no need
+        # to process the bindings.
+        if not self._classic_policy_exists:
+            return [commandParseTree]
+
         policy_type = self.__class__.__name__
         return self.convert_entity_policy_bind(commandParseTree,
                                                commandParseTree, policy_name,
@@ -1841,12 +1864,15 @@ class ContentSwitching(ConvertConfig):
                                   bindings to the CS or CR vservers
                                   key - vserver name
                                   value - List of the policy binding tree
+        _classic_policy_exists - Contains information whether any
+                                 classic CS policy is configured.
         """
         self._policy_bind_info = OrderedDict()
         self._cs_vserver_info_ci = []
         self._cs_vserver_info_precedence = []
         self._policy_url_info = OrderedDict()
         self._cs_policy_binding_info = OrderedDict()
+        self._classic_policy_exists = False
 
     @common.register_for_cmd("add", "cs", "vserver")
     def convert_cs_vserver(self, commandParseTree):
@@ -2065,6 +2091,7 @@ class ContentSwitching(ConvertConfig):
             policy_info["is_domain"] = is_domain
             policy_info["url_priority"] = url_priority
             self._policy_bind_info[policy_name]["policy_info"] = policy_info
+            self._classic_policy_exists = True
             return []
         else:
             pol_obj.policy_type = "advanced"
@@ -2088,6 +2115,10 @@ class ContentSwitching(ConvertConfig):
         class_name = self.__class__.__name__
         policy_type = common.pols_binds.get_policy(policy_name).module
         if policy_type == class_name:
+            # If no classic CS policy is configured, then no need
+            # to process the bindings.
+            if not self._classic_policy_exists:
+                return [commandParseTree]
             if policy_name in self._policy_bind_info:
                 cs_vserver_name = commandParseTree.positional_value(0).value
                 # Saving bind commands for resolving multiple bind points for

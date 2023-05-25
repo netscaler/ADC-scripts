@@ -40,7 +40,8 @@ if (not -e $config_file) {
 
 my($filename, $dir_path) = fileparse($config_file);
 
-my $exit_status = system("python /netscaler/nspepi2/config_check_main.py -f $config_file");
+my $dirname = dirname(__FILE__);
+my $exit_status = system("python $dirname/nspepi2/config_check_main.py -f $config_file");
 if ($exit_status != 0) {
 	print "Error in checking config file: $exit_status";
 	exit;

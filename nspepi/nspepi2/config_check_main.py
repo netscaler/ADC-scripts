@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -89,56 +89,6 @@ def output_line(line, outfile, verbose):
         logging.info(line.rstrip())
 
 
-def check_for_removed_expression(cmd, outfile, verbose):
-    """
-    Checks for the expressions which are removed.
-    Args:
-	cmd: NS config command to be checked
-        outfile: Output file to write commands using removed config
-        verbose: True iff converted commands should also be output to console
-    """
-    if re.search(r'\bSYS\s*\.\s*EVAL_CLASSIC_EXPR\s*\(',
-                 cmd, re.IGNORECASE):
-        output_line(cmd, outfile, verbose)
-        return
-
-    body_expr = re.compile(r'\bHTTP\s*\.\s*REQ\s*\.\s*BODY\b\s*', re.IGNORECASE)
-    cmd_len = len(cmd)
-    for match in re.finditer(body_expr, cmd):
-        start_index = match.start()
-        length = match.end() - match.start()
-        if (((start_index + length) >= cmd_len) or
-             (cmd[start_index + length] != '(')):
-            output_line(cmd, outfile, verbose)
-            return
-
-    if re.search(r'\b((Q\.HOSTNAME)|(Q\.TRACKING)|'
-                 '(Q\.METHOD)|(Q\.URL)|(Q\.VERSION)|'
-                 '(Q\.CONTENT_LENGTH)|(Q\.HEADER)|'
-                 '(Q\.IS_VALID)|(Q\.DATE)|'
-                 '(Q\.COOKIE)|(Q\.BODY)|(Q\.TXID)|'
-                 '(Q\.CACHE_CONTROL)|(Q\.USER)|'
-                 '(Q\.IS_NTLM_OR_NEGOTIATE)|'
-                 '(Q\.FULL_HEADER)|'
-                 '(Q\.LB_VSERVER)|(Q\.CS_VSERVER))',
-                 cmd, re.IGNORECASE):
-        output_line(cmd, outfile, verbose)
-        return
-
-    if re.search(r'\b((S\.VERSION)|(S\.STATUS)|'
-                  '(S\.STATUS_MSG)|(S\.IS_REDIRECT)|'
-                  '(S\.IS_INFORMATIONAL)|(S\.IS_SUCCESSFUL)|'
-                  '(S\.IS_CLIENT_ERROR)|(S\.IS_SERVER_ERROR)|'
-                  '(S\.TRACKING)|(S\.HEADER)|(S\.FULL_HEADER)|'
-                  '(S\.IS_VALID)|(S\.DATE)|(S\.BODY)|'
-                  '(S\.SET_COOKIE)|(S\.SET_COOKIE2)|'
-                  '(S\.CONTENT_LENGTH)|'
-                  '(S\.CACHE_CONTROL)|(S\.TXID)|(S\.MEDIA))',
-		  cmd, re.IGNORECASE):
-        output_line(cmd, outfile, verbose)
-        return
-
-
 def check_config_file(infile, outfile, verbose):
     """
     Process ns config file passed in argument and report the classic and
@@ -174,14 +124,9 @@ def check_config_file(infile, outfile, verbose):
                     # converting to advanced, so list will contains
                     # at most only one command.
                     output = m.method(m.obj, parsed_tree)
-                    if len(output) == 0:
-                        check_for_removed_expression(cmd, outfile, verbose)
-                    else:
+                    if len(output) != 0:
                          output_line(cmd, outfile, verbose)
-            else:
-                check_for_removed_expression(cmd, outfile, verbose)
-        else:
-            check_for_removed_expression(cmd, outfile, verbose)
+
 
 
 def main():

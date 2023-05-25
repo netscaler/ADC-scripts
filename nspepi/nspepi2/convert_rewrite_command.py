@@ -63,7 +63,7 @@ class Rewrite(cli_cmds.ConvertConfig):
             tree.add_keyword(search_val_param)
         if tree.keyword_exists('bypassSafetyCheck'):
             tree.remove_keyword('bypassSafetyCheck')
-        tree = Rewrite.convert_adv_expr_list(tree, [3, "refineSearch"])
+        tree = Rewrite.convert_adv_expr_list(tree, [2, 3, "refineSearch"])
         return [tree]
 
     @common.register_for_cmd("add", "rewrite", "policy")
@@ -89,6 +89,11 @@ class Rewrite(cli_cmds.ConvertConfig):
             HTTP/SSL vservers
         tree - bind command parse tree
         """
+        # If no filter policy is configured, then no need to process
+        # rewrite bindings
+        if not cli_cmds.filter_policy_exists:
+            return [tree]
+
         get_goto_arg = tree.positional_value(2).value
         policy_name = tree.positional_value(0).value
         get_bind_type = tree.keyword_value("type")[0].value
@@ -124,6 +129,11 @@ class Rewrite(cli_cmds.ConvertConfig):
         2. vserver_protocol_dict - dict from cli_cmds and convert_lb_cmd
               packages which carries protocol as value to the key - vserver name
         """
+        # If no filter policy is configured, then no need to process
+        # rewrite bindings
+        if not cli_cmds.filter_policy_exists:
+            return [bind_parse_tree]
+
         get_goto_arg = bind_parse_tree.keyword_value(
             "gotoPriorityExpression")[0].value
         vs_name = bind_parse_tree.positional_value(0).value.lower()

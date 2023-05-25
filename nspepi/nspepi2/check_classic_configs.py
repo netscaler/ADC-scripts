@@ -24,6 +24,55 @@ def check_configs_init():
     NamedExpression.register_built_in_named_exprs()
 
 
+def is_advanced_removed_expr_present(expr):
+    """
+    Checks for the advanced expressions, Q and S prefixes,
+    HTTP.REQ.BODY and SYS.EVAL_CLASSIC_EXPR, which are removed.
+    Args:
+	expr: Expression or command on which removed expressions
+              need to check.
+    Returns True if the removed expressions are present, otherwise
+    False.
+    """
+    if re.search(r'\bSYS\s*\.\s*EVAL_CLASSIC_EXPR\s*\(',
+                 expr, re.IGNORECASE):
+        return True
+
+    body_expr = re.compile(r'\bHTTP\s*\.\s*REQ\s*\.\s*BODY\b\s*', re.IGNORECASE)
+    expr_len = len(expr)
+    for match in re.finditer(body_expr, expr):
+        start_index = match.start()
+        length = match.end() - match.start()
+        if (((start_index + length) >= expr_len) or
+             (expr[start_index + length] != '(')):
+            return True
+
+    if re.search(r'\b((Q\.HOSTNAME)|(Q\.TRACKING)|'
+                 '(Q\.METHOD)|(Q\.URL)|(Q\.VERSION)|'
+                 '(Q\.CONTENT_LENGTH)|(Q\.HEADER)|'
+                 '(Q\.IS_VALID)|(Q\.DATE)|'
+                 '(Q\.COOKIE)|(Q\.BODY)|(Q\.TXID)|'
+                 '(Q\.CACHE_CONTROL)|(Q\.USER)|'
+                 '(Q\.IS_NTLM_OR_NEGOTIATE)|'
+                 '(Q\.FULL_HEADER)|'
+                 '(Q\.LB_VSERVER)|(Q\.CS_VSERVER))',
+                 expr, re.IGNORECASE):
+        return True
+
+    if re.search(r'\b((S\.VERSION)|(S\.STATUS)|'
+                  '(S\.STATUS_MSG)|(S\.IS_REDIRECT)|'
+                  '(S\.IS_INFORMATIONAL)|(S\.IS_SUCCESSFUL)|'
+                  '(S\.IS_CLIENT_ERROR)|(S\.IS_SERVER_ERROR)|'
+                  '(S\.TRACKING)|(S\.HEADER)|(S\.FULL_HEADER)|'
+                  '(S\.IS_VALID)|(S\.DATE)|(S\.BODY)|'
+                  '(S\.SET_COOKIE)|(S\.SET_COOKIE2)|'
+                  '(S\.CONTENT_LENGTH)|'
+                  '(S\.CACHE_CONTROL)|(S\.TXID)|(S\.MEDIA))',
+		  expr, re.IGNORECASE):
+        return True
+    return False
+
+
 def remove_quotes(val):
     """
         Helper function to remove the surrounding
@@ -69,11 +118,13 @@ class CheckConfig(object):
     """Base class to check the config"""
 
     @staticmethod
-    def check_pos_expr(commandParseTree, pos):
+    def check_pos_expr(commandParseTree, pos, check_removed_expr = True):
         """
             Check the expression present at a given position
             commandParseTree - the parse tree to modify
             pos - the position of the parameter to modify
+            check_removed_expr - True iff advanced expressions
+                which are removed need to check.
             If the expression is classic, then invalid
             flag would be set.
         """
@@ -95,6 +146,8 @@ class CheckConfig(object):
                 commandParseTree.set_invalid()
             elif is_classic_named_expr_present(converted_expr):
                 commandParseTree.set_invalid()
+            elif check_removed_expr:
+                CheckConfig.check_adv_expr_list(commandParseTree, [pos])
         return commandParseTree
 
     @staticmethod
@@ -127,6 +180,8 @@ class CheckConfig(object):
                 commandParseTree.set_invalid()
             elif is_classic_named_expr_present(converted_expr):
                 commandParseTree.set_invalid()
+            else:
+                CheckConfig.check_adv_expr_list(commandParseTree, [keywordName])
         return commandParseTree
 
     @staticmethod
@@ -140,6 +195,25 @@ class CheckConfig(object):
         """ Add the classic entity name in the classic global list."""
         name = commandParseTree.positional_value(0).value.lower()
         classic_entities_names.add(name)
+
+    @staticmethod
+    def check_adv_expr_list(commandParseTree, param_list):
+        """
+        Checks that if any advanced expression which have
+        been removed are present in any of the parameters
+        provided by param_list.
+        Args:
+            commandParseTree: The parse tree to check
+            param_list: List of the parameters which need to check
+                        for the advanced removed expression.
+        """
+        for param in param_list:
+            adv_expr = common.get_cmd_arg(param, commandParseTree)
+            if adv_expr is None:
+                continue
+            if is_advanced_removed_expr_present(adv_expr):
+                commandParseTree.set_invalid()
+                break
 
 
 @common.register_class_methods
@@ -169,6 +243,9 @@ class CacheRedirection(CheckConfig):
         else it is an advanced policy.
         """
         if commandParseTree.keyword_exists('action'):
+            CacheRedirection.check_adv_expr_list(commandParseTree, ["rule"])
+            if commandParseTree.invalid:
+                return [commandParseTree]
             return []
         else:
             return [commandParseTree]
@@ -272,6 +349,11 @@ class HTTP_CALLOUT(CheckConfig):
     @common.register_for_cmd("add", "policy", "httpCallout")
     def register_name(self, commandParseTree):
         HTTP_CALLOUT.register_policy_entity_name(commandParseTree)
+        HTTP_CALLOUT.check_adv_expr_list(
+                commandParseTree, ["hostExpr", "urlStemExpr", "headers",
+                "parameters", "bodyExpr", "fullReqExpr", "resultExpr"])
+        if commandParseTree.invalid:
+            return [commandParseTree]
         return []
 
 
@@ -365,6 +447,14 @@ class NamedExpression(CheckConfig):
     @common.register_for_cmd("add", "policy", "expression")
     def check_policy_expr(self, commandParseTree):
         """
+            This checks whether the expression is classic or
+            advanced. If it is an advanced expression, then
+            it checks whether any removed advanced expression
+            is being used or not. And if it classic, then checks
+            whether name is correct for the advanced expression,
+            and whether classic expression can be converted to
+            advanced or not.
+
             Classic named expression name is not
             valid for advanced expression if:
             1. It the name is same as one of the Policy
@@ -430,7 +520,7 @@ class NamedExpression(CheckConfig):
 
         original_tree = copy.deepcopy(commandParseTree)
         commandParseTree = NamedExpression \
-            .check_pos_expr(commandParseTree, 1)
+            .check_pos_expr(commandParseTree, 1, False)
 
         if commandParseTree.invalid:
             """
@@ -442,6 +532,8 @@ class NamedExpression(CheckConfig):
             NamedExpression.register_classic_entity_name(original_tree)
         else:
             NamedExpression.register_policy_entity_name(original_tree)
+        if is_advanced_removed_expr_present(expr_rule):
+            return [commandParseTree]
         return []
 
 
@@ -458,6 +550,9 @@ class HTTPProfile(CheckConfig):
         """
         if commandParseTree.keyword_exists('spdy'):
             return [commandParseTree]
+        HTTPProfile.check_adv_expr_list(commandParseTree, ["clientIpHdrExpr"])
+        if commandParseTree.invalid:
+            return [commandParseTree]
         return []
 
 
@@ -468,6 +563,9 @@ class ContentSwitching(CheckConfig):
     @common.register_for_cmd("add", "cs", "policy")
     def check_cs_policy(self, commandParseTree):
         if commandParseTree.keyword_exists('action'):
+            ContentSwitching.check_adv_expr_list(commandParseTree, ["rule"])
+            if commandParseTree.invalid:
+                return [commandParseTree]
             return []
         if commandParseTree.keyword_exists('rule'):
             if commandParseTree.keyword_exists('domain'):
@@ -592,6 +690,9 @@ class Rewrite(CheckConfig):
             return [tree]
         if tree.keyword_exists('bypassSafetyCheck'):
             return [tree]
+        Rewrite.check_adv_expr_list(tree, [2, 3, "refineSearch"])
+        if tree.invalid:
+            return [tree]
         return []
 
 
@@ -602,8 +703,12 @@ class LB(CheckConfig):
     """
 
     @common.register_for_cmd("add", "lb", "vserver")
-    def check_rewrite_action(self, commandParseTree):
+    def check_lb_rule(self, commandParseTree):
         commandParseTree = LB.check_keyword_expr(commandParseTree, 'rule')
+        if commandParseTree.invalid:
+            return [commandParseTree]
+        LB.check_adv_expr_list(
+            commandParseTree, ["Listenpolicy", "resRule", "pushLabel"])
         if commandParseTree.invalid:
             return [commandParseTree]
         return []
@@ -641,3 +746,168 @@ class HDoSP(CheckConfig):
     @common.register_for_cmd("add", "dos", "policy")
     def check_sc_policy(self, tree):
         return [tree]
+
+
+@common.register_class_methods
+class AdvExpression(CheckConfig):
+    """
+    Handles conversion of Q and S prefixes, HTTP.REQ.BODY and
+    SYS.EVAL_CLASSIC_EXPR expression in commands
+    which allows only advanced expressions.
+    """
+
+    @common.register_for_cmd("add", "rewrite", "policy")
+    @common.register_for_cmd("add", "responder", "action")
+    @common.register_for_cmd("add", "responder", "policy")
+    @common.register_for_cmd("add", "cs", "vserver")
+    @common.register_for_cmd("add", "videooptimization", "detectionpolicy")
+    @common.register_for_cmd("add", "videooptimization", "pacingpolicy")
+    @common.register_for_cmd("add", "dns", "policy")
+    @common.register_for_cmd("add", "cache", "selector")
+    @common.register_for_cmd("add", "cs", "action")
+    @common.register_for_cmd("add", "vpn", "clientlessAccessPolicy")
+    @common.register_for_cmd("add", "authentication", "webAuthAction")
+    @common.register_for_cmd("set", "authentication", "webAuthAction")
+    @common.register_for_cmd("add", "tm", "trafficPolicy")
+    @common.register_for_cmd("add", "authentication", "samlIdPPolicy")
+    @common.register_for_cmd("add", "feo", "policy")
+    @common.register_for_cmd("add", "cache", "policy")
+    @common.register_for_cmd("add", "transform", "policy")
+    @common.register_for_cmd("add", "appqoe", "action")
+    @common.register_for_cmd("add", "appqoe", "policy")
+    @common.register_for_cmd("add", "appflow", "policy")
+    @common.register_for_cmd("add", "autoscale", "policy")
+    @common.register_for_cmd("add", "authentication", "Policy")
+    @common.register_for_cmd("add", "authentication", "loginSchemaPolicy")
+    @common.register_for_cmd("add", "authentication", "loginSchema")
+    @common.register_for_cmd("add", "gslb", "vserver")
+    @common.register_for_cmd("add", "ns", "assignment")
+    @common.register_for_cmd("add", "dns", "action64")
+    @common.register_for_cmd("add", "dns", "policy64")
+    @common.register_for_cmd("add", "authentication", "OAuthIdPPolicy")
+    @common.register_for_cmd("add", "authentication", "samlIdPProfile")
+    @common.register_for_cmd("add", "contentInspection", "policy")
+    @common.register_for_cmd("add", "ica", "policy")
+    @common.register_for_cmd("add", "lb", "group")
+    @common.register_for_cmd("add", "audit", "messageaction")
+    @common.register_for_cmd("add", "aaa", "preauthenticationpolicy")
+    @common.register_for_cmd("add", "spillover", "policy")
+    @common.register_for_cmd("add", "stream", "selector")
+    @common.register_for_cmd("add","tm", "formSSOAction")
+    @common.register_for_cmd("add", "tm", "samlSSOProfile")
+    @common.register_for_cmd("add", "vpn", "sessionPolicy")
+    @common.register_for_cmd("add", "vpn", "trafficAction")
+    @common.register_for_cmd("add", "vpn", "vserver")
+    #TODO: This entry needs to be removed when Classic Syslog policy
+    # support is removed, and we've a separate function to check the
+    # command.
+    @common.register_for_cmd("add", "audit", "syslogPolicy")
+    #TODO: This entry needs to be removed when Classic Nslog policy
+    # support is removed, and we've a separate function to check the
+    # command.
+    @common.register_for_cmd("add", "audit", "nslogPolicy")
+    #TODO: This entry needs to be removed when Classic Authorization
+    # poicy support is removed, and we've a separate function
+    # to check the command.
+    @common.register_for_cmd("add", "authorization", "policy")
+    #TODO: This entry needs to be removed when Classic VPNTraffic policy
+    # support is removed, and we've a separate function to check the
+    # command.
+    @common.register_for_cmd("add", "vpn", "trafficPolicy")
+    #TODO: This entry needs to be removed when Classic TM sessionPolicy
+    # policy support is removed, and we've a separate function to check
+    # the command.
+    @common.register_for_cmd("add", "tm", "sessionPolicy")
+    #TODO: This entry needs to be removed when Classic tunnel trafficPolicy
+    # policy support is removed, and we've a separate function to check
+    # the command.
+    @common.register_for_cmd("add", "tunnel", "trafficPolicy")
+    def check_advanced_expr(self, commandParseTree):
+        """
+        Commands which allows ONLY advanced expressions should be registered for this method.
+        Handles conversion of Q and S prefixes and SYS.EVAL_CLASSIC_EXPR expression.
+        Each command that will be registered to this method, should add an entry in
+        command_parameters_list.
+        """
+
+        # Each command should mention the list of parameters where advanced expression
+        # can be used. Only these parameters will be checked for SYS.EVAL_CLASSIC_EXPR
+        # expression.
+        # If its a keyword parameter, mention the keyword name.
+        # If its a positional parameter, mention the position of the parameter.
+        command_parameters_list = {
+            "add rewrite policy": [1],
+            "add responder action": [2, "reasonPhrase", "headers"],
+            "add responder policy": [1],
+            "add cs vserver": ["Listenpolicy", "pushLabel"],
+            "add videooptimization detectionpolicy": ["rule"],
+            "add videooptimization pacingpolicy": ["rule"],
+            "add dns policy": [1],
+            "add cache selector": [1, 2, 3, 4, 5, 6, 7, 8],
+            "add cs action": ["targetVserverExpr"],
+            "add vpn clientlessaccesspolicy": [1],
+            "add authentication webauthaction": ["fullReqExpr", "successRule"],
+            "set authentication webauthaction": ["fullReqExpr", "successRule"],
+            "add tm trafficpolicy": [1],
+            "add authentication samlidppolicy": ["rule"],
+            "add feo policy": [1],
+            "add cache policy": ["rule"],
+            "add transform policy": [1],
+            "add appqoe action": ["dosTrigExpression"],
+            "add appqoe policy": ["rule"],
+            "add ssl policy": ["rule"],
+            "add appflow policy": [1],
+            "add autoscale policy": ["rule"],
+            "add authentication policy": ["rule"],
+            "add authentication loginschemapolicy": ["rule"],
+            "add authentication loginschema": ["userExpression", "passwdExpression"],
+            "add gslb vserver": ["rule"],
+            "add ns assignment": ["set", "append", "add", "sub"],
+            "add dns action64": ["mappedRule", "excludeRule"],
+            "add dns policy64": ["rule"],
+            "add authentication oauthidppolicy": ["rule"],
+            "add authentication samlidpprofile": ["NameIDExpr", "acsUrlRule"],
+            "add contentinspection policy": ["rule"],
+            "add ica policy": ["rule"],
+            "add lb group": ["rule"],
+            "add audit messageaction": [2],
+            "add aaa preauthenticationpolicy": [1],
+            "add spillover policy": ["rule"],
+            "add stream selector": [1, 2, 3, 4, 5],
+            "add tm formssoaction": ["ssoSuccessRule"],
+            "add tm samlssoprofile": ["relaystateRule", "NameIDExpr"],
+            "add vpn sessionpolicy": [1],
+            "add vpn trafficaction": ["userExpression", "passwdExpression"],
+            "add vpn vserver": ["Listenpolicy"],
+            #TODO: This entry needs to be removed when Classic Syslog policy
+            # support is removed, and we've a separate function to check the
+            # command.
+            "add audit syslogpolicy": [1],
+            #TODO: This entry needs to be removed when Classic Nslog policy
+            # support is removed, and we've a separate function to check the
+            # command.
+            "add audit nslogpolicy": [1],
+            #TODO: This entry needs to be removed when Classic Authorization
+            # poicy support is removed, and we've a separate function
+            # to check the command.
+            "add authorization policy": [1],
+            #TODO: This entry needs to be removed when Classic VPNTraffic policy
+            # support is removed, and we've a separate function to check the
+            # command.
+            "add vpn trafficpolicy": [1],
+            #TODO: This entry needs to be removed when Classic TM sessionPolicy
+            # policy support is removed, and we've a separate function to check
+            # the command.
+            "add tm sessionpolicy": [1],
+            #TODO: This entry needs to be removed when Classic tunnel trafficPolicy
+            # policy support is removed, and we've a separate function to check
+            # the command.
+            "add tunnel trafficpolicy": [1],
+        }
+
+        command = " ".join(commandParseTree.get_command_type()).lower()
+        if command in command_parameters_list:
+            AdvExpression.check_adv_expr_list(commandParseTree, command_parameters_list[command])
+            if commandParseTree.invalid:
+                return [commandParseTree]
+        return []
