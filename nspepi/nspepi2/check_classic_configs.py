@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc. All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -17,11 +17,13 @@ def check_configs_init():
     global policy_entities_names
     global classic_entities_names
     global named_expr
+    global build_version
     named_expr = {}
     policy_entities_names = set()
     classic_entities_names = set()
     # Register built-in named expressions.
     NamedExpression.register_built_in_named_exprs()
+    build_version = "13.1"
 
 
 def is_advanced_removed_expr_present(expr):
@@ -135,7 +137,7 @@ class CheckConfig(object):
             logging.error('Error in checking command : ' +
                           str(commandParseTree))
         elif converted_expr == "Invalid Expression":
-                commandParseTree.set_invalid()
+            commandParseTree.set_invalid()
         else:
             # converted_expr will have quotes and rule_expr will not have
             # quotes. Since we are comparing these 2 expressions, removing
@@ -248,6 +250,7 @@ class CacheRedirection(CheckConfig):
                 return [commandParseTree]
             return []
         else:
+            commandParseTree.set_invalid()
             return [commandParseTree]
 
     @common.register_for_cmd("bind", "cr", "vserver")
@@ -267,6 +270,7 @@ class CacheRedirection(CheckConfig):
         if policy_type == class_name:
             # check for classic built-in policy.
             if policy_name in self.built_in_policies:
+                bind_parse_tree.set_invalid()
                 return [bind_parse_tree]
 
         return []
@@ -311,6 +315,7 @@ class Patset(CheckConfig):
     def register_name(self, commandParseTree):
         Patset.register_policy_entity_name(commandParseTree)
         if commandParseTree.keyword_exists('indexType'):
+            commandParseTree.set_invalid()
             return [commandParseTree]
         return []
 
@@ -323,6 +328,7 @@ class Dataset(CheckConfig):
     def register_name(self, commandParseTree):
         Dataset.register_policy_entity_name(commandParseTree)
         if commandParseTree.keyword_exists('indexType'):
+            commandParseTree.set_invalid()
             return [commandParseTree]
         return []
 
@@ -334,11 +340,13 @@ class Patclass(CheckConfig):
     @common.register_for_cmd("add", "policy", "patclass")
     def check_add_patclass(self, commandParseTree):
         Patclass.register_policy_entity_name(commandParseTree)
+        commandParseTree.set_invalid()
         return [commandParseTree]
 
     @common.register_for_cmd("bind", "policy", "patclass")
     def check_bind_patclass(self, commandParseTree):
         Patclass.register_policy_entity_name(commandParseTree)
+        commandParseTree.set_invalid()
         return [commandParseTree]
 
 
@@ -516,6 +524,10 @@ class NamedExpression(CheckConfig):
 
         if commandParseTree.keyword_exists('clientSecurityMessage'):
             NamedExpression.register_classic_entity_name(commandParseTree)
+            logging.warning(("Client security expressions are deprecated"
+                " using this command [{}], please use the"
+                " the advanced authentication policy command")
+                .format(str(commandParseTree).strip()))
             return []
 
         original_tree = copy.deepcopy(commandParseTree)
@@ -530,10 +542,13 @@ class NamedExpression(CheckConfig):
             """
             NamedExpression.register_policy_entity_name(commandParseTree)
             NamedExpression.register_classic_entity_name(original_tree)
+            logging.warning(("Classic expression has been deprecated in"
+                " command [{}], please use the advanced expression")
+                .format(str(commandParseTree).strip()))
         else:
             NamedExpression.register_policy_entity_name(original_tree)
-        if is_advanced_removed_expr_present(expr_rule):
-            return [commandParseTree]
+            if is_advanced_removed_expr_present(expr_rule):
+                return [commandParseTree]
         return []
 
 
@@ -549,6 +564,7 @@ class HTTPProfile(CheckConfig):
         Syntax:
         """
         if commandParseTree.keyword_exists('spdy'):
+            commandParseTree.set_invalid()
             return [commandParseTree]
         HTTPProfile.check_adv_expr_list(commandParseTree, ["clientIpHdrExpr"])
         if commandParseTree.invalid:
@@ -569,16 +585,18 @@ class ContentSwitching(CheckConfig):
             return []
         if commandParseTree.keyword_exists('rule'):
             if commandParseTree.keyword_exists('domain'):
+                    commandParseTree.set_invalid()
                     return [commandParseTree]
             else:
-                original_cmd = copy.deepcopy(commandParseTree)
                 commandParseTree = ContentSwitching \
                     .check_keyword_expr(commandParseTree, 'rule')
                 if commandParseTree.invalid:
-                    return [original_cmd]
+                    return [commandParseTree]
         elif commandParseTree.keyword_exists('url'):
+            commandParseTree.set_invalid()
             return [commandParseTree]
         elif commandParseTree.keyword_exists('domain'):
+            commandParseTree.set_invalid()
             return [commandParseTree]
 
         return []
@@ -605,6 +623,7 @@ class CMP(CheckConfig):
             self._initial_cmp_parameter = \
                 cmp_param_tree.keyword_value("policyType")[0].value.lower()
             if self._initial_cmp_parameter == "classic":
+                cmp_param_tree.set_invalid()
                 return [cmp_param_tree]
         return []
 
@@ -612,15 +631,15 @@ class CMP(CheckConfig):
     def set_cmp_policy(self, cmp_policy_tree):
         policy_name = cmp_policy_tree.positional_value(0).value
         if policy_name in self.built_in_policies:
+            cmp_policy_tree.set_invalid()
             return [cmp_policy_tree]
         return []
 
     @common.register_for_cmd("add", "cmp", "policy")
     def check_cmp_policy(self, cmp_policy_tree):
-        original_cmd = copy.deepcopy(cmp_policy_tree)
         CheckConfig.check_keyword_expr(cmp_policy_tree, 'rule')
         if cmp_policy_tree.invalid:
-            return [original_cmd]
+            return [cmp_policy_tree]
         return []
 
     @common.register_for_cmd("bind", "cmp", "global")
@@ -631,10 +650,12 @@ class CMP(CheckConfig):
         # If state keyword is present then it is a
         # classic binding.
         if bind_cmd_tree.keyword_exists("state"):
+            bind_cmd_tree.set_invalid()
             return [bind_cmd_tree]
 
         policy_name = bind_cmd_tree.positional_value(0).value
         if policy_name in self.built_in_policies:
+            bind_cmd_tree.set_invalid()
             return [bind_cmd_tree]
         return []
 
@@ -650,6 +671,7 @@ class CLITransformFilter(CheckConfig):
         """
         Check Filter action
         """
+        action_parse_tree.set_invalid()
         return [action_parse_tree]
 
     @common.register_for_cmd("add", "filter", "policy")
@@ -657,6 +679,7 @@ class CLITransformFilter(CheckConfig):
         """
         Check Filter policy
         """
+        policy_parse_tree.set_invalid()
         return [policy_parse_tree]
 
     @common.register_for_cmd("bind", "filter", "global")
@@ -664,6 +687,7 @@ class CLITransformFilter(CheckConfig):
         """
         Check Filter global binding
         """
+        bind_parse_tree.set_invalid()
         return [bind_parse_tree]
 
     @common.register_for_cmd("add", "filter", "htmlinjectionvariable")
@@ -675,6 +699,7 @@ class CLITransformFilter(CheckConfig):
         """
         Check Filter HTMLInjection command
         """
+        cmd_parse_tree.set_invalid()
         return [cmd_parse_tree]
 
 
@@ -687,8 +712,10 @@ class Rewrite(CheckConfig):
     @common.register_for_cmd("add", "rewrite", "action")
     def check_rewrite_action(self, tree):
         if tree.keyword_exists('pattern'):
+            tree.set_invalid()
             return [tree]
         if tree.keyword_exists('bypassSafetyCheck'):
+            tree.set_invalid()
             return [tree]
         Rewrite.check_adv_expr_list(tree, [2, 3, "refineSearch"])
         if tree.invalid:
@@ -723,6 +750,7 @@ class SureConnect(CheckConfig):
     @common.register_for_cmd("add", "sc", "policy")
     @common.register_for_cmd("set", "sc", "parameter")
     def check_sc_policy(self, tree):
+        tree.set_invalid()
         return [tree]
 
 
@@ -734,6 +762,7 @@ class PriorityQueuing(CheckConfig):
 
     @common.register_for_cmd("add", "pq", "policy")
     def check_sc_policy(self, tree):
+        tree.set_invalid()
         return [tree]
 
 
@@ -744,7 +773,8 @@ class HDoSP(CheckConfig):
     """
 
     @common.register_for_cmd("add", "dos", "policy")
-    def check_sc_policy(self, tree):
+    def check_dos_policy(self, tree):
+        tree.set_invalid()
         return [tree]
 
 
@@ -757,11 +787,9 @@ class AdvExpression(CheckConfig):
     """
 
     @common.register_for_cmd("add", "rewrite", "policy")
-    @common.register_for_cmd("add", "responder", "action")
     @common.register_for_cmd("add", "responder", "policy")
     @common.register_for_cmd("add", "cs", "vserver")
     @common.register_for_cmd("add", "videooptimization", "detectionpolicy")
-    @common.register_for_cmd("add", "videooptimization", "pacingpolicy")
     @common.register_for_cmd("add", "dns", "policy")
     @common.register_for_cmd("add", "cache", "selector")
     @common.register_for_cmd("add", "cs", "action")
@@ -790,7 +818,6 @@ class AdvExpression(CheckConfig):
     @common.register_for_cmd("add", "ica", "policy")
     @common.register_for_cmd("add", "lb", "group")
     @common.register_for_cmd("add", "audit", "messageaction")
-    @common.register_for_cmd("add", "aaa", "preauthenticationpolicy")
     @common.register_for_cmd("add", "spillover", "policy")
     @common.register_for_cmd("add", "stream", "selector")
     @common.register_for_cmd("add","tm", "formSSOAction")
@@ -798,30 +825,6 @@ class AdvExpression(CheckConfig):
     @common.register_for_cmd("add", "vpn", "sessionPolicy")
     @common.register_for_cmd("add", "vpn", "trafficAction")
     @common.register_for_cmd("add", "vpn", "vserver")
-    #TODO: This entry needs to be removed when Classic Syslog policy
-    # support is removed, and we've a separate function to check the
-    # command.
-    @common.register_for_cmd("add", "audit", "syslogPolicy")
-    #TODO: This entry needs to be removed when Classic Nslog policy
-    # support is removed, and we've a separate function to check the
-    # command.
-    @common.register_for_cmd("add", "audit", "nslogPolicy")
-    #TODO: This entry needs to be removed when Classic Authorization
-    # poicy support is removed, and we've a separate function
-    # to check the command.
-    @common.register_for_cmd("add", "authorization", "policy")
-    #TODO: This entry needs to be removed when Classic VPNTraffic policy
-    # support is removed, and we've a separate function to check the
-    # command.
-    @common.register_for_cmd("add", "vpn", "trafficPolicy")
-    #TODO: This entry needs to be removed when Classic TM sessionPolicy
-    # policy support is removed, and we've a separate function to check
-    # the command.
-    @common.register_for_cmd("add", "tm", "sessionPolicy")
-    #TODO: This entry needs to be removed when Classic tunnel trafficPolicy
-    # policy support is removed, and we've a separate function to check
-    # the command.
-    @common.register_for_cmd("add", "tunnel", "trafficPolicy")
     def check_advanced_expr(self, commandParseTree):
         """
         Commands which allows ONLY advanced expressions should be registered for this method.
@@ -837,7 +840,6 @@ class AdvExpression(CheckConfig):
         # If its a positional parameter, mention the position of the parameter.
         command_parameters_list = {
             "add rewrite policy": [1],
-            "add responder action": [2, "reasonPhrase", "headers"],
             "add responder policy": [1],
             "add cs vserver": ["Listenpolicy", "pushLabel"],
             "add videooptimization detectionpolicy": ["rule"],
@@ -871,7 +873,6 @@ class AdvExpression(CheckConfig):
             "add ica policy": ["rule"],
             "add lb group": ["rule"],
             "add audit messageaction": [2],
-            "add aaa preauthenticationpolicy": [1],
             "add spillover policy": ["rule"],
             "add stream selector": [1, 2, 3, 4, 5],
             "add tm formssoaction": ["ssoSuccessRule"],
@@ -879,30 +880,6 @@ class AdvExpression(CheckConfig):
             "add vpn sessionpolicy": [1],
             "add vpn trafficaction": ["userExpression", "passwdExpression"],
             "add vpn vserver": ["Listenpolicy"],
-            #TODO: This entry needs to be removed when Classic Syslog policy
-            # support is removed, and we've a separate function to check the
-            # command.
-            "add audit syslogpolicy": [1],
-            #TODO: This entry needs to be removed when Classic Nslog policy
-            # support is removed, and we've a separate function to check the
-            # command.
-            "add audit nslogpolicy": [1],
-            #TODO: This entry needs to be removed when Classic Authorization
-            # poicy support is removed, and we've a separate function
-            # to check the command.
-            "add authorization policy": [1],
-            #TODO: This entry needs to be removed when Classic VPNTraffic policy
-            # support is removed, and we've a separate function to check the
-            # command.
-            "add vpn trafficpolicy": [1],
-            #TODO: This entry needs to be removed when Classic TM sessionPolicy
-            # policy support is removed, and we've a separate function to check
-            # the command.
-            "add tm sessionpolicy": [1],
-            #TODO: This entry needs to be removed when Classic tunnel trafficPolicy
-            # policy support is removed, and we've a separate function to check
-            # the command.
-            "add tunnel trafficpolicy": [1],
         }
 
         command = " ".join(commandParseTree.get_command_type()).lower()
@@ -910,4 +887,237 @@ class AdvExpression(CheckConfig):
             AdvExpression.check_adv_expr_list(commandParseTree, command_parameters_list[command])
             if commandParseTree.invalid:
                 return [commandParseTree]
+        return []
+
+
+@common.register_class_methods
+class Deprecation(CheckConfig):
+    """
+    Check the deprecated commands or parameters or expressions.
+    """
+
+    @common.register_for_cmd("add", "audit", "syslogPolicy")
+    @common.register_for_cmd("add", "audit", "nslogPolicy")
+    @common.register_for_cmd("add", "authorization", "policy")
+    @common.register_for_cmd("add", "vpn", "trafficPolicy")
+    @common.register_for_cmd("add", "tunnel", "trafficPolicy")
+    @common.register_for_cmd("add", "tm", "sessionPolicy")
+    def check_deprecated_classic_policy(self, commandParseTree):
+        """
+        Check the policies which can still use the classic
+        expressions.
+        """
+        rule_expr = commandParseTree.positional_value(1).value
+        commandParseTree = Deprecation.check_pos_expr(commandParseTree, 1, False)
+        if commandParseTree.invalid:
+            logging.warning(("Classic expression in the rule field has been deprecated"
+                " for command [{}], please use the advanced expression")
+                .format(str(commandParseTree).strip()))
+        elif is_advanced_removed_expr_present(rule_expr):
+            commandParseTree.set_invalid()
+            return [commandParseTree]
+        return []
+
+    @common.register_for_cmd("add", "authentication", "certPolicy")
+    @common.register_for_cmd("add", "authentication", "negotiatePolicy")
+    @common.register_for_cmd("add", "authentication", "tacacsPolicy")
+    @common.register_for_cmd("add", "authentication", "samlPolicy")
+    @common.register_for_cmd("add", "authentication", "radiusPolicy")
+    @common.register_for_cmd("add", "authentication", "ldapPolicy")
+    @common.register_for_cmd("add", "authentication", "localPolicy")
+    @common.register_for_cmd("add", "authentication", "webAuthPolicy")
+    @common.register_for_cmd("add", "authentication", "dfaPolicy")
+    @common.register_for_cmd("add", "aaa", "preauthenticationpolicy")
+    def check_authentication_commands(self, commandParseTree):
+        """
+        Check the Authentication commands which have been deprecated
+        """
+        logging.warning(("[{}] command has been deprecated,"
+            " please use the advanced authentication policy command")
+            .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("add", "ns", "trafficDomain")
+    def check_ns_traffic_domain(self, commandParseTree):
+        """
+        Check the traffic domain command
+        """
+        logging.warning(("[{}] command has been deprecated,"
+            " please use the admin partition feature")
+            .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("set", "aaa", "preauthenticationparameter")
+    def check_aaa_preauth_params(self, commandParseTree):
+        """
+        Rule filed of "set aaa preauthenticationparameter"
+        command is deprecated.
+        """
+        if commandParseTree.keyword_exists('rule'):
+            logging.warning(("Client security expressions are deprecated"
+                " using this command [{}], please use the"
+                " the advanced authentication policy command")
+                .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("add", "vpn", "sessionAction")
+    def check_vpn_sessionaction(self, commandParseTree):
+        """
+        clientSecurity filed of "add vpn sessionAction"
+        command is deprecated.
+        """
+        if commandParseTree.keyword_exists('clientSecurity'):
+            logging.warning(("Client security expressions are deprecated"
+                " using this command [{}], please use the"
+                " the advanced authentication policy command")
+                .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("add", "vpn", "url")
+    def check_vpn_url(self, commandParseTree):
+        """
+        SelfAuth SSO type is deprecated
+        """
+        if commandParseTree.keyword_exists('ssotype'):
+            sso_type = commandParseTree.keyword_value("ssotype")[0].value.lower()
+            if sso_type is "selfauth":
+                logging.warning("Selfauth type has been deprecated"
+                    " in command [{}]".format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("add", "vpn", "portaltheme")
+    def check_vpn_portaltheme(self, commandParseTree):
+        """
+        Default, X1, and Greenbubble portal themes are
+        deprecated
+        """
+        if commandParseTree.keyword_exists('basetheme'):
+            base_theme = commandParseTree.keyword_value("basetheme")[0].value
+            if base_theme is "Default" or base_theme is "X1" \
+                or base_theme is "Greenbubble":
+                    logging.warning(("Default, GreenBubble and X1 themes"
+                        " have been deprecated in command [{}],"
+                        " please use RfWebUI theme or RfWebUI based custom theme")
+                        .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("bind", "vpn", "vserver")
+    @common.register_for_cmd("bind", "vpn", "global")
+    def check_vpn_commands(self, commandParseTree):
+        """
+        Default, X1, and Greenbubble portal themes are
+        deprecated
+        """
+        if commandParseTree.keyword_exists('portaltheme'):
+            base_theme = commandParseTree.keyword_value("portaltheme")[0].value
+            if base_theme is "Default" or base_theme is "X1" \
+                or base_theme is "Greenbubble":
+                    logging.warning(("Default, GreenBubble and X1 themes"
+                        " have been deprecated in command [{}],"
+                        " please use RfWebUI theme or RfWebUI based custom theme")
+                        .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("add", "dns", "action")
+    def check_dns_action(self, commandParseTree):
+        """
+        Rewrite_response and DROP action types are
+        deprecated.
+        """
+        action_type = commandParseTree.positional_value(1).value.lower()
+        if action_type is "rewrite_response":
+            logging.warning(("Rewrite_Response action type is deprecated in"
+                " command [{}], please use the replace_dns_answer_section"
+                " action type under Rewrite feature.")
+                .format(str(commandParseTree).strip()))
+        elif action_type is "drop":
+            logging.warning(("Drop action type is deprecated in"
+                " command [{}], please use the Drop"
+                " action type under Responder feature.")
+                .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("enable", "ns", "feature")
+    def check_ns_feature(self, commandParseTree):
+        """
+        SC, PQ, HDOSP, and CF features are deprecated.
+        """
+        features_to_remove = ["SC", "PQ", "HDOSP", "CF"]
+        num_of_enabled_features = commandParseTree.get_number_of_params()
+        for inx in range(num_of_enabled_features):
+            feature_node = commandParseTree.positional_value(inx)
+            feature_name = feature_node.value
+            if feature_name in features_to_remove:
+                logging.warning("SC, PQ, HDOSP, and CF features"
+                    " have been deprecated in command [{}], please"
+                    " use the APPQOE, REWRITE, and RESPONDER features"
+                    .format(str(commandParseTree).strip()))
+                break
+        return []
+
+    @common.register_for_cmd("add", "videooptimization", "pacingpolicy")
+    @common.register_for_cmd("add", "videooptimization", "pacingaction")
+    @common.register_for_cmd("add", "videooptimization", "pacingpolicylabel")
+    @common.register_for_cmd("bind", "videooptimization", "globalpacing")
+    @common.register_for_cmd("bind", "videooptimization", "pacingpolicylabel")
+    def check_deprecated_pacingcommands(self, commandParseTree):
+        """
+        Check the videooptimization pacing commands
+        """
+        if (commandParseTree.ot == "pacingpolicy"):
+            rule_expr = commandParseTree.keyword_value("rule")[0].value
+            if is_advanced_removed_expr_present(rule_expr):
+                commandParseTree.set_invalid()
+                return [commandParseTree]
+
+        logging.warning(("[{}] command has been deprecated")
+            .format(str(commandParseTree).strip()))
+        return []
+
+    @common.register_for_cmd("add", "lsn", "appsattributes")
+    @common.register_for_cmd("add", "lsn", "appsprofile")
+    @common.register_for_cmd("add", "lsn", "client")
+    @common.register_for_cmd("add", "lsn", "group")
+    @common.register_for_cmd("add", "lsn", "httphdrlogprofile")
+    @common.register_for_cmd("add", "lsn", "ip6profile")
+    @common.register_for_cmd("add", "lsn", "logprofile")
+    @common.register_for_cmd("add", "lsn", "pool")
+    @common.register_for_cmd("add", "lsn", "rtspalgprofile")
+    @common.register_for_cmd("add", "lsn", "sipalgprofile")
+    @common.register_for_cmd("add", "lsn", "static")
+    @common.register_for_cmd("add", "lsn", "transportprofile")
+    @common.register_for_cmd("bind", "lsn", "appsprofile")
+    @common.register_for_cmd("bind", "lsn", "client")
+    @common.register_for_cmd("bind", "lsn", "group")
+    @common.register_for_cmd("bind", "lsn", "pool")
+    def check_lsn_commands(self, commandParseTree):
+        """
+        Check the Authentication commands which have been deprecated
+        """
+        if (int(build_version.split(".")[0]) > 13):
+            logging.warning(("[{}] command has been deprecated")
+                .format(str(commandParseTree).strip()))
+        return []
+
+
+@common.register_class_methods
+class Responder(CheckConfig):
+    """
+    Check responder commands
+    """
+
+    @common.register_for_cmd("add", "responder", "action")
+    def check_responder_action(self, commandParseTree):
+        """
+        Check the responder action for the removed
+        advanced expressions and NOOP action type.
+        """
+        Responder.check_adv_expr_list(
+            commandParseTree, [2, "reasonPhrase", "headers"])
+        if commandParseTree.invalid:
+            return [commandParseTree]
+        action_type = commandParseTree.positional_value(1).value.lower()
+        if action_type is "noop":
+            logging.warning("NOOP action type has been deprecated"
+                " for command [{}]".format(str(commandParseTree).strip()))
         return []

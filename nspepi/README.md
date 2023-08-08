@@ -41,6 +41,18 @@ The following modules are the prerequisites for using these tools:
 - Ply module for Python
 - Switch.pm for Perl
 
+If python3 is installed, then please create a symbolic link for python like "ln -s /usr/bin/pytho3 /usr/bin/python".
+
+Commands to install pip, ply and Switch.pm modules in CentOS:
+sudo yum install -y perl-Switch
+sudo yum install python-pip
+sudo yum install python-ply
+
+Commands to install pip, ply and Switch.pm modules in Ubuntu:
+sudo apt install libswitch-perl
+sudo apt install python-ply
+sudo apt install python-pip
+
 ## Pre-validation tool for removed or deprecated features in Citrix ADC version 13.1
 
 This is a pre-validation tool to check if any deprecated functionality that is removed from Citrix ADC 13.1 is still used in the configuration for your current release. If the validation result shows usage of a deprecated functionality, then before upgrading your appliance, you must first modify the configuration to the Citrix recommended alternative. You can modify the configuration either manually or using the NSPEPI tool.
