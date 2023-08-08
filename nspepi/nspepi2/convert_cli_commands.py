@@ -1075,7 +1075,7 @@ class TMSession(ConvertConfig):
 
     # classic built-in policy and its corresponding advanced built-in policy.
     built_in_policies = {
-        "settmsessparams_pol": "SETTMSESSPARAMS_ADV_POL"
+        "SETTMSESSPARAMS_POL": "SETTMSESSPARAMS_ADV_POL"
     }
 
     def __init__(self):
@@ -1134,10 +1134,10 @@ class TMSession(ConvertConfig):
         # TM session policy can be bound to aaa user, aaa group and
         # Authentication vserver.In all these bind commands, keyword used
         # for policy is "policy"
-        lower_policy_name = policy_name.lower()
-        if lower_policy_name in self.built_in_policies:
+        upper_policy_name = policy_name.upper()
+        if upper_policy_name in self.built_in_policies:
             self.update_tree_arg(commandParseTree, "policy",
-                                 self.built_in_policies[lower_policy_name])
+                                 self.built_in_policies[upper_policy_name])
         return self.convert_entity_policy_bind(
             commandParseTree, commandParseTree,
             policy_name, policy_type, priority_arg, goto_arg)
@@ -1157,14 +1157,14 @@ class TMSession(ConvertConfig):
         if (common.pols_binds.get_policy(policy_name).module
                 != self.__class__.__name__):
             return [commandParseTree]
-        lower_policy_name = policy_name.lower()
+        upper_policy_name = policy_name.upper()
         priority_arg = "priority"
         goto_arg = "gotoPriorityExpression"
         module = self.__class__.__name__
         # check for classic built-in policy
-        if lower_policy_name in self.built_in_policies:
+        if upper_policy_name in self.built_in_policies:
             self.update_tree_arg(commandParseTree, "policyName",
-                                 self.built_in_policies[lower_policy_name])
+                                 self.built_in_policies[upper_policy_name])
         return self.convert_global_bind(commandParseTree,
                                         commandParseTree, policy_name, module,
                                         priority_arg, goto_arg)
@@ -2542,7 +2542,6 @@ class AdvExpression(ConvertConfig):
     @common.register_for_cmd("add", "ica", "policy")
     @common.register_for_cmd("add", "lb", "group")
     @common.register_for_cmd("add", "audit", "messageaction")
-    @common.register_for_cmd("add", "aaa", "preauthenticationpolicy")
     @common.register_for_cmd("add", "spillover", "policy")
     @common.register_for_cmd("add", "stream", "selector")
     @common.register_for_cmd("add","tm", "formSSOAction")
@@ -2607,7 +2606,6 @@ class AdvExpression(ConvertConfig):
             "add ica policy": ["rule"],
             "add lb group": ["rule"],
             "add audit messageaction": [2],
-            "add aaa preauthenticationpolicy": [1],
             "add spillover policy": ["rule"],
             "add stream selector": [1, 2, 3, 4, 5],
             "add tm formssoaction": ["ssoSuccessRule"],
@@ -2691,3 +2689,51 @@ class HDoSP(ConvertConfig):
                        "is not supported, please do the conversion "
                        "manually").format(str(commandParseTree).strip()))
         return [commandParseTree]
+
+
+@common.register_class_methods
+class NSFeatures(ConvertConfig):
+    """ Handles enable ns feature command """
+
+    @common.register_for_cmd("enable", "ns", "feature")
+    def convert_ns_features(self, commandParseTree):
+        features_to_remove = ["SC", "PQ", "HDOSP", "CF"]
+        num_of_enabled_features = commandParseTree.get_number_of_params()
+        new_feature_command = CLICommand("enable", "ns", "feature")
+        is_rewrite_feature_enabled = False
+        is_responder_feature_enabled = False
+        is_appqoe_feature_enabled = False
+        enable_rw_responder_features = False
+        enable_appqoe_feature = False
+        for inx in range(num_of_enabled_features):
+            feature_node = commandParseTree.positional_value(inx)
+            feature_name = feature_node.value
+            if feature_name == "REWRITE":
+                is_rewrite_feature_enabled = True
+            elif feature_name == "RESPONDER":
+                is_responder_feature_enabled = True
+            elif feature_name == "AppQoE":
+                is_appqoe_feature_enabled = True
+
+            if feature_name == "CF":
+                enable_rw_responder_features = True
+            elif feature_name in ["SC", "PQ", "HDOSP"]:
+                enable_appqoe_feature = True
+
+            if feature_name not in features_to_remove:
+                new_feature_command.add_positional(feature_node)
+
+        if enable_rw_responder_features:
+            if not is_rewrite_feature_enabled:
+                pos = CLIPositionalParameter("REWRITE")
+                new_feature_command.add_positional(pos)
+
+            if not is_responder_feature_enabled:
+                pos = CLIPositionalParameter("RESPONDER")
+                new_feature_command.add_positional(pos)
+
+        if enable_appqoe_feature and not is_appqoe_feature_enabled:
+            pos = CLIPositionalParameter("AppQoE")
+            new_feature_command.add_positional(pos)
+
+        return [new_feature_command]

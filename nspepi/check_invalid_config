@@ -27,9 +27,28 @@ if (!($python_module_list =~ m/\bply==/)) {
 
 
 my $number_args = $#ARGV + 1;
-if ($number_args != 1) {
-    print "Usage: check_invalid_config <ns_config_file>\n";
+if ($number_args > 3) {
+    tool_usage();
     exit;
+}
+
+my($buildVersion) ="13.1";
+my @allowed_build_versions = ("13.1", "14.1");
+
+if ($number_args == 3) {
+    if (uc($ARGV[1]) ne "-BUILDVERSION") {
+        tool_usage();
+        exit;
+    }
+    $buildVersion = $ARGV[2];
+    if (not grep(/^$buildVersion/, @allowed_build_versions)) {
+	print "Incorrect build version\n";
+	exit;
+    }
+} elsif ($number_args > 1) {
+	print "Incorrect parameters\n";
+	tool_usage();
+	exit;
 }
 
 my $config_file = $ARGV[0];
@@ -38,24 +57,41 @@ if (not -e $config_file) {
     exit;
 }
 
+sub tool_usage() {
+    print "Usage: check_invalid_config <ns_config_file> -buildVersion <Build version for which invalid or depreacted commands need to check>\n";
+}
+
 my($filename, $dir_path) = fileparse($config_file);
 
 my $dirname = dirname(__FILE__);
-my $exit_status = system("python $dirname/nspepi2/config_check_main.py -f $config_file");
+my $exit_status = system("python $dirname/nspepi2/config_check_main.py -f $config_file -B $buildVersion");
 if ($exit_status != 0) {
 	print "Error in checking config file: $exit_status";
 	exit;
 }
 my $invalid_config_file = $dir_path."/issues_".$filename;
+my $deprecated_config_file = $dir_path."deprecated_".$filename;
 
 # Checks whether any command is present in the file
 if (!(-z $invalid_config_file)) {
-	print "\nThe following configuration lines will get errors in 13.1 and both they and dependent configuration will be removed from the configuration:\n";
-	system("cat $invalid_config_file");
-	print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html.\n";
-	print "\nNOTE: the nspepi tool doesn't convert the following configurations:\n\t1. SureConnect commands\n\t2. PriorityQueuing commands\n\t3. HTTP Denial of Service Protection commands\n\t4. Classic SSL commands\n\t5. HTMLInjection commands.\n";
+    print "\nThe following configuration lines will get errors in ".$buildVersion." and both they and dependent configuration will be removed from the configuration:\n";
+    system("cat $invalid_config_file");
+    print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html.\n";
+    print "\nNOTE: the nspepi tool doesn't convert the following configurations:\n\t1. SureConnect commands\n\t2. PriorityQueuing commands\n\t3. HTTP Denial of Service Protection commands\n\t4. Classic SSL commands\n\t5. HTMLInjection commands.\n";
+    if (!(-z $deprecated_config_file)) {
+        print "\nNOTE: some deprecated commands have also been detected in the config file, please check ".$deprecated_config_file." file for the deprecated commands.\n";
+    } else {
+        print "\nNOTE: No deprecated commands detected in the configuration.\n";
+    }
 } else {
-	print "\nNo issue detected with the configuration.\n";
+    if (!(-z $deprecated_config_file)) {
+        print "\nThe following configuration lines have been deprecated in ".$buildVersion." and will be removed in future releases:\n";
+        system("tail -n 10 $deprecated_config_file");
+        print "\nFor the complete deprecated commands, please see the output of ".$deprecated_config_file." file.\n";
+        print "\nNo invalid config detected with the configuration.\n";
+    } else {
+	    print "\nNo invalid or deprecated config detected with the configuration.\n";
+    }
 }
 print "\nUse pre-validation tool and nspepi tool available at https://github.com/citrix/ADC-scripts/tree/master/nspepi for the most complete and up-to-date version.\n"
 ### End check_invalid_config script

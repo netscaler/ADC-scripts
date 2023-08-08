@@ -66,13 +66,10 @@ def setup_logging(log_file_name, file_log_level):
     console_log_handler = logging.StreamHandler()
     console_log_handler.setLevel(logging.INFO)
     # create formatters and add them to the handlers
-    fh_format = logging.Formatter('%(asctime)s: %(levelname)s - %(message)s')
-    ch_format = logging.Formatter('%(levelname)s - %(message)s')
+    fh_format = logging.Formatter('%(message)s')
     file_log_handler.setFormatter(fh_format)
-    console_log_handler.setFormatter(ch_format)
     # add the handlers to the logger
     logger.addHandler(file_log_handler)
-    logger.addHandler(console_log_handler)
 
 
 def output_line(line, outfile, verbose):
@@ -132,7 +129,7 @@ def check_config_file(infile, outfile, verbose):
 def main():
     desc = cleandoc(
         """
-        Checks whether invalid config is present in input file
+        Checks whether invalid or deprecated config is present in input file
         """)
     arg_parser = argparse.ArgumentParser(
         prog="configCheck",
@@ -147,6 +144,10 @@ def main():
     arg_parser.add_argument(
         '-V', '--version', action='version',
         version='%(prog)s {}'.format(__version__))
+    arg_parser.add_argument(
+        '-B', '--buildVersion', default='13.1',
+        help="Build version for which invalid or depreacted commands"
+	" need to check")
     try:
         args = arg_parser.parse_args()
     except IOError as e:
@@ -155,7 +156,10 @@ def main():
     conf_file_path = os.path.dirname(args.infile)
     conf_file_name = os.path.basename(args.infile)
     check_classic_configs.check_configs_init()
+    check_classic_configs.build_version = args.buildVersion
     new_path = os.path.join(conf_file_path, "issues_" + conf_file_name)
+    deprecated_file_name = os.path.join(conf_file_path, "deprecated_" + conf_file_name)
+    setup_logging(deprecated_file_name, logging.WARNING)
     with open(args.infile, 'r') as infile:
         with open(new_path, 'w') as outfile:
             check_config_file(infile, outfile, args.verbose)
