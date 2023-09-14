@@ -96,9 +96,10 @@ def get_classic_expr_list(expr):
         token_value = str(next_token)
         token_value_len = len(token_value)
         is_classic_expr = False
-        if token_value in NamedExpression.built_in_named_expr:
+        lower_token_value = token_value.lower()
+        if lower_token_value in NamedExpression.built_in_named_expr:
             # Checking for built-in classic Named expression.
-            adv_expr_name = NamedExpression.built_in_named_expr[token_value]
+            adv_expr_name = NamedExpression.built_in_named_expr[lower_token_value]
             lower_adv_expr_name = adv_expr_name.lower()
             if lower_adv_expr_name in policy_entities_names:
                 is_classic_expr = True
@@ -182,7 +183,7 @@ class ConvertConfig(object):
         return converted_expr
 
     @staticmethod
-    def convert_pos_expr(commandParseTree, pos):
+    def convert_pos_expr(commandParseTree, pos, ignore_csec_expr = False):
         """
             Convert the expression present at a given position
             commandParseTree - the parse tree to modify
@@ -199,12 +200,15 @@ class ConvertConfig(object):
                           str(commandParseTree).strp())
             return commandParseTree
 
-        converted_expr = convert_classic_expr.convert_classic_expr(rule_expr)
+        converted_expr = convert_classic_expr.convert_classic_expr(rule_expr, ignore_csec_expr)
         if converted_expr is None:
             logging.error('Error in converting command : ' +
                           str(commandParseTree).strip())
             converted_expr = rule_expr
         else:
+            if (converted_expr == "Ignoring Client security Expression"):
+                commandParseTree.set_has_csec_expr()
+                return commandParseTree
             # converted_expr will have quotes and rule_expr will not have
             # quotes. Since we are comparing these 2 expressions, removing
             # quotes from converted_expr.
@@ -1740,18 +1744,6 @@ class NamedExpression(ConvertConfig):
         expr_rule = commandParseTree.positional_value(1).value
         lower_expr_name = expr_name.lower()
         named_expr[lower_expr_name] = expr_rule
-        if (((lower_expr_name in reserved_word_list) or
-             (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None) or
-             (lower_expr_name in policy_entities_names))):
-            logging.error(("Expression name {} is invalid for advanced "
-                           "expression: names must begin with an ASCII "
-                           "alphabetic character or underscore and must "
-                           "contain only ASCII alphanumerics or underscores"
-                           " and shouldn't be name of another policy entity"
-                           "; words reserved for policy use may not be used;"
-                           " underscores will be substituted for any invalid"
-                           " characters in corresponding advanced name")
-                          .format(expr_name))
 
         if commandParseTree.keyword_exists('clientSecurityMessage'):
             NamedExpression.csec_expr_list[lower_expr_name] = {}
@@ -1768,6 +1760,21 @@ class NamedExpression(ConvertConfig):
             NamedExpression.register_classic_entity_name(commandParseTree)
             return [commandParseTree]
 
+        if ((lower_expr_name in reserved_word_list) or
+            (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None)):
+            logging.error(("Expression name {} is invalid for advanced "
+                           "expression: names must begin with an ASCII "
+                           "alphabetic character or underscore and must "
+                           "contain only ASCII alphanumerics or underscores"
+                           " and shouldn't be name of another policy entity"
+                           "; words reserved for policy use may not be used;"
+                           " underscores will be substituted for any invalid"
+                           " characters in corresponding advanced name")
+                          .format(expr_name))
+
+        if (lower_expr_name in policy_entities_names):
+            logging.error("Name {} is already in use".format(expr_name))
+
         original_tree = copy.deepcopy(commandParseTree)
         """Convert classic named expression to advanced
         Syntax:
@@ -1776,7 +1783,7 @@ class NamedExpression(ConvertConfig):
         add policy expression <expression name> <advanced expression>
         """
         commandParseTree = NamedExpression \
-            .convert_pos_expr(commandParseTree, 1)
+            .convert_pos_expr(commandParseTree, 1, True)
 
         if commandParseTree.adv_upgraded:
             tree_list = [commandParseTree]
@@ -1803,6 +1810,11 @@ class NamedExpression(ConvertConfig):
                 commandParseTree.remove_keyword('devno')
             tree_list.append(commandParseTree)
             NamedExpression.register_policy_entity_name(commandParseTree)
+            NamedExpression.register_classic_entity_name(original_tree)
+        elif commandParseTree.has_csec_expr:
+            NamedExpression.csec_expr_list[lower_expr_name] = {}
+            NamedExpression.csec_expr_list[lower_expr_name]["tree"] = original_tree
+            NamedExpression.csec_expr_list[lower_expr_name]["error_displayed"] = False
             NamedExpression.register_classic_entity_name(original_tree)
         else:
             NamedExpression.register_policy_entity_name(original_tree)
@@ -2125,6 +2137,35 @@ class ContentSwitching(ConvertConfig):
                 # CS policies without action issue.
                 if cs_vserver_name not in self._cs_policy_binding_info:
                     self._cs_policy_binding_info[cs_vserver_name] = []
+
+                if commandParseTree.keyword_exists("targetLBVserver"):
+                    vserver_name = commandParseTree.keyword_value(
+                        "targetLBVserver")[0].value
+                else:
+                    vserver_name = commandParseTree.positional_value(1).value
+
+                if "vserver_bind_info" not in self._policy_bind_info[policy_name]:
+                    vserver_bind_info = {}
+                    vserver_bind_info["multiple_bindings"] = False
+                    vserver_bind_info["multiple_target_vservers"] = False
+                    vserver_bind_info["diff_case_search"] = False
+                    ci_search = cs_vserver_name in self._cs_vserver_info_ci
+                    vserver_bind_info["case_insensitive"] = ci_search
+                    vserver_bind_info["target_vservers"] = vserver_name
+                    self._policy_bind_info[policy_name]["vserver_bind_info"] =  \
+                            vserver_bind_info
+                else:
+                    vserver_bind_info = self._policy_bind_info[policy_name]["vserver_bind_info"]
+                    vserver_bind_info["multiple_bindings"] = True
+
+                    if vserver_bind_info["target_vservers"] != vserver_name:
+                        vserver_bind_info["multiple_target_vservers"] = True
+
+                    if vserver_bind_info["diff_case_search"] is False:
+                        ci_search = cs_vserver_name in self._cs_vserver_info_ci
+                        if vserver_bind_info["case_insensitive"] != ci_search:
+                            vserver_bind_info["diff_case_search"] = True
+
                 self._cs_policy_binding_info[cs_vserver_name].append(
                                                         commandParseTree)
                 return []
@@ -2162,6 +2203,11 @@ class ContentSwitching(ConvertConfig):
                        It will be either positional index or keyword name.
         Returns converted list of parse trees.
         """
+        # If no classic CS policy is configured, then no need
+        # to process the bindings.
+        if not self._classic_policy_exists:
+            return [commandParseTree]
+
         policy_type = self.__class__.__name__
         if policy_name in self._policy_bind_info:
             cs_vserver_name = commandParseTree.positional_value(0).value
@@ -2169,6 +2215,23 @@ class ContentSwitching(ConvertConfig):
             # CS policies without action issue.
             if cs_vserver_name not in self._cs_policy_binding_info:
                 self._cs_policy_binding_info[cs_vserver_name] = []
+
+            vserver_name = commandParseTree.keyword_value("policyName")[1].value
+            if "vserver_bind_info" not in self._policy_bind_info[policy_name]:
+                vserver_bind_info = {}
+                vserver_bind_info["multiple_bindings"] = False
+                vserver_bind_info["multiple_target_vservers"] = False
+                vserver_bind_info["diff_case_search"] = False
+                vserver_bind_info["target_vservers"] = vserver_name
+                self._policy_bind_info[policy_name]["vserver_bind_info"] =  \
+                        vserver_bind_info
+            else:
+                vserver_bind_info = self._policy_bind_info[policy_name]["vserver_bind_info"]
+                vserver_bind_info["multiple_bindings"] = True
+
+                if vserver_bind_info["target_vservers"] != vserver_name:
+                    vserver_bind_info["multiple_target_vservers"] = True
+
             self._cs_policy_binding_info[cs_vserver_name].append(
                                                     commandParseTree)
             return []
@@ -2229,31 +2292,36 @@ class ContentSwitching(ConvertConfig):
                         "bind cr vserver"):
                     vserver_name = bind_tree.keyword_value(
                         "policyName")[1].value
-                new_policy_name = "nspepi_adv_" + policy_name + '_' + \
-                    vserver_name
+
                 set_ci_rule = False
-                # If CS vserver is configured with caseSensitive
-                # parameter set to OFF and policy is configured
-                # with URL parameter, then add '_ci' suffix in the
-                # new policy name and rule of that policy should
-                # do case-insensitive search.
                 if (is_cs_vserver and (cs_cr_vserver_name in self._cs_vserver_info_ci) and
-                    (policy_name in self._policy_url_info)):
-                    new_policy_name += '_ci'
+                        (policy_name in self._policy_url_info)):
                     set_ci_rule = True
-                truncated_pol_name = new_policy_name
-                action_name = "nspepi_adv_cs_act_" + vserver_name
-                truncated_act_name = action_name
-                if new_policy_name not in newly_added_policy_names:
+
+                vserver_bind_info = self._policy_bind_info[policy_name]["vserver_bind_info"]
+                need_new_policy = False
+                need_new_action = False
+
+                if vserver_bind_info["multiple_bindings"]:
+                    need_new_action = True
+                    if vserver_bind_info["multiple_target_vservers"]:
+                        need_new_policy = True
+                    elif vserver_bind_info["diff_case_search"]:
+                        if set_ci_rule:
+                            need_new_policy = True
+
+                if need_new_action:
+                    action_name = "nspepi_adv_cs_act_" + vserver_name
+                    truncated_act_name = action_name
                     if action_name not in newly_added_action_names:
                         # Create new action
                         action_tree = CLICommand("add", "cs", "action")
                         # Check action name length. Max allowed length is 127
                         if len(action_name) > 127:
                             truncated_act_name, overlength_action_counter = \
-                                self.truncate_name(action_name,
-                                                   overlength_action_names,
-                                                   overlength_action_counter)
+                                    self.truncate_name(action_name,
+                                            overlength_action_names,
+                                            overlength_action_counter)
                         pos = CLIPositionalParameter(truncated_act_name)
                         action_tree.add_positional(pos)
                         vserver_key = CLIKeywordParameter(CLIKeywordName(
@@ -2267,54 +2335,80 @@ class ContentSwitching(ConvertConfig):
                         # Get truncated name if truncated.
                         if action_name in overlength_action_names:
                             truncated_act_name = overlength_action_names[
-                                action_name]
-                    # Create new policy with [policy_name]_[vserver_name] as
-                    # as name and bind to newly created action
-                    # cs_act_[vserver_name]
-                    new_policy = copy.deepcopy(policy_tree)
-                    # Max length of policy name allowed is 127.
-                    truncated_pol_name = new_policy_name
-                    if len(new_policy_name) > 127:
-                        truncated_pol_name, overlength_policy_counter = \
-                            self.truncate_name(new_policy_name,
-                                               overlength_policy_names,
-                                               overlength_policy_counter)
-                    self.update_tree_arg(new_policy, 0, truncated_pol_name)
+                                    action_name]
+
+                if need_new_policy:
+                    new_policy_name = "nspepi_adv_" + policy_name + '_' + \
+                            vserver_name
+                    # If CS vserver is configured with caseSensitive
+                    # parameter set to OFF and policy is configured
+                    # with URL parameter, then add '_ci' suffix in the
+                    # new policy name and rule of that policy should
+                    # do case-insensitive search.
                     if set_ci_rule:
-                        rule_node = new_policy.keyword_value('rule')
-                        rule_node[0].set_value(self._policy_url_info[policy_name], True)
-                    action_key = CLIKeywordParameter(CLIKeywordName("action"))
-                    action_key.add_value(truncated_act_name)
-                    new_policy.add_keyword(action_key)
-                    # Remove the devno so that multiple lines
-                    # don't have the same devno.
-                    if new_policy.keyword_exists('devno'):
-                        new_policy.remove_keyword('devno')
-                    newly_added_policy_names.append(new_policy_name)
-                    pol_list.append(new_policy)
-                else:
-                    # When policy is already added.
-                    # Get truncated policy name if truncated.
-                    if new_policy_name in overlength_policy_names:
-                        truncated_pol_name = overlength_policy_names[
-                            new_policy_name]
-                # Remove targetLBVserver from bind command and update policy
-                # name to newly added policy name.
-                self.update_tree_arg(bind_tree, "policyName",
-                                     truncated_pol_name)
-                if ((' '.join(bind_tree.get_command_type())).lower() ==
-                        "bind cs vserver"):
-                    if bind_tree.keyword_exists("targetLBVserver"):
-                        bind_tree.remove_keyword("targetLBVserver")
+                        new_policy_name += '_ci'
+                    truncated_pol_name = new_policy_name
+                    if new_policy_name not in newly_added_policy_names:
+                        # Create new policy with [policy_name]_[vserver_name] as
+                        # as name and bind to newly created action
+                        # cs_act_[vserver_name]
+                        new_policy = copy.deepcopy(policy_tree)
+                        # Max length of policy name allowed is 127.
+                        truncated_pol_name = new_policy_name
+                        if len(new_policy_name) > 127:
+                            truncated_pol_name, overlength_policy_counter = \
+                                self.truncate_name(new_policy_name,
+                                        overlength_policy_names,
+                                        overlength_policy_counter)
+                        self.update_tree_arg(new_policy, 0, truncated_pol_name)
+                        if set_ci_rule:
+                            rule_node = new_policy.keyword_value('rule')
+                            rule_node[0].set_value(self._policy_url_info[policy_name], True)
+                        action_key = CLIKeywordParameter(CLIKeywordName("action"))
+                        action_key.add_value(truncated_act_name)
+                        new_policy.add_keyword(action_key)
+                        # Remove the devno so that multiple lines
+                        # don't have the same devno.
+                        if new_policy.keyword_exists('devno'):
+                            new_policy.remove_keyword('devno')
+                        newly_added_policy_names.append(new_policy_name)
+                        pol_list.append(new_policy)
                     else:
-                        bind_tree.remove_positional(1)
-                elif ((' '.join(bind_tree.get_command_type())).lower() ==
-                        "bind cr vserver"):
-                    # In bind cr vserver command, vserver name exists in
-                    # following way:
-                    # bind cr vserver <vserver> -policyName <policy name>
-                    #                                       <vserver name>
-                    bind_tree.remove_keyword_value("policyName", 1)
+                        # When policy is already added.
+                        # Get truncated policy name if truncated.
+                        if new_policy_name in overlength_policy_names:
+                            truncated_pol_name = overlength_policy_names[
+                                new_policy_name]
+                    # Remove targetLBVserver from bind command and update policy
+                    # name to newly added policy name.
+                    self.update_tree_arg(bind_tree, "policyName",
+                        truncated_pol_name)
+                else:
+                    if set_ci_rule:
+                        rule_node = policy_tree.keyword_value('rule')
+                        rule_node[0].set_value(self._policy_url_info[policy_name], True)
+                    if need_new_action:
+                        action_key = CLIKeywordParameter(CLIKeywordName("action"))
+                        action_key.add_value(truncated_act_name)
+                        policy_tree.add_keyword(action_key)
+
+                    if policy_tree not in pol_list:
+                        pol_list.append(policy_tree)
+
+                if need_new_action:
+                    if ((' '.join(bind_tree.get_command_type())).lower() ==
+                            "bind cs vserver"):
+                        if bind_tree.keyword_exists("targetLBVserver"):
+                            bind_tree.remove_keyword("targetLBVserver")
+                        else:
+                            bind_tree.remove_positional(1)
+                    elif ((' '.join(bind_tree.get_command_type())).lower() ==
+                            "bind cr vserver"):
+                        # In bind cr vserver command, vserver name exists in
+                        # following way:
+                        # bind cr vserver <vserver> -policyName <policy name>
+                        #                                       <vserver name>
+                        bind_tree.remove_keyword_value("policyName", 1)
 
                 if cs_cr_vserver_name not in cs_cr_vserver_bindings:
                     cs_cr_vserver_bindings[cs_cr_vserver_name] = [[], [], [], [], []]
