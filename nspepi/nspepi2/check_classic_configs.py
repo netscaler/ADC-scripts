@@ -980,7 +980,7 @@ class Deprecation(CheckConfig):
         """
         if commandParseTree.keyword_exists('ssotype'):
             sso_type = commandParseTree.keyword_value("ssotype")[0].value.lower()
-            if sso_type is "selfauth":
+            if sso_type == "selfauth":
                 logging.warning("Selfauth type has been deprecated"
                     " in command [{}]".format(str(commandParseTree).strip()))
         return []
@@ -993,8 +993,8 @@ class Deprecation(CheckConfig):
         """
         if commandParseTree.keyword_exists('basetheme'):
             base_theme = commandParseTree.keyword_value("basetheme")[0].value
-            if base_theme is "Default" or base_theme is "X1" \
-                or base_theme is "Greenbubble":
+            if base_theme == "Default" or base_theme == "X1" \
+                or base_theme == "Greenbubble":
                     logging.warning(("Default, GreenBubble and X1 themes"
                         " have been deprecated in command [{}],"
                         " please use RfWebUI theme or RfWebUI based custom theme")
@@ -1010,8 +1010,8 @@ class Deprecation(CheckConfig):
         """
         if commandParseTree.keyword_exists('portaltheme'):
             base_theme = commandParseTree.keyword_value("portaltheme")[0].value
-            if base_theme is "Default" or base_theme is "X1" \
-                or base_theme is "Greenbubble":
+            if base_theme == "Default" or base_theme == "X1" \
+                or base_theme == "Greenbubble":
                     logging.warning(("Default, GreenBubble and X1 themes"
                         " have been deprecated in command [{}],"
                         " please use RfWebUI theme or RfWebUI based custom theme")
@@ -1025,12 +1025,12 @@ class Deprecation(CheckConfig):
         deprecated.
         """
         action_type = commandParseTree.positional_value(1).value.lower()
-        if action_type is "rewrite_response":
+        if action_type == "rewrite_response":
             logging.warning(("Rewrite_Response action type is deprecated in"
                 " command [{}], please use the replace_dns_answer_section"
                 " action type under Rewrite feature.")
                 .format(str(commandParseTree).strip()))
-        elif action_type is "drop":
+        elif action_type == "drop":
             logging.warning(("Drop action type is deprecated in"
                 " command [{}], please use the Drop"
                 " action type under Responder feature.")
@@ -1090,6 +1090,7 @@ class Deprecation(CheckConfig):
     @common.register_for_cmd("bind", "lsn", "client")
     @common.register_for_cmd("bind", "lsn", "group")
     @common.register_for_cmd("bind", "lsn", "pool")
+    @common.register_for_cmd("set", "lsn", "parameter")
     def check_lsn_commands(self, commandParseTree):
         """
         Check the Authentication commands which have been deprecated

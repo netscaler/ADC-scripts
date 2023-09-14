@@ -27,7 +27,7 @@ if (!($python_module_list =~ m/\bply==/)) {
 
 
 my $number_args = $#ARGV + 1;
-if ($number_args > 3) {
+if ($number_args > 3 or $number_args < 1) {
     tool_usage();
     exit;
 }
@@ -74,10 +74,10 @@ my $deprecated_config_file = $dir_path."deprecated_".$filename;
 
 # Checks whether any command is present in the file
 if (!(-z $invalid_config_file)) {
-    print "\nThe following configuration lines will get errors in ".$buildVersion." and both they and dependent configuration will be removed from the configuration:\n";
-    system("cat $invalid_config_file");
-    print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html.\n";
-    print "\nNOTE: the nspepi tool doesn't convert the following configurations:\n\t1. SureConnect commands\n\t2. PriorityQueuing commands\n\t3. HTTP Denial of Service Protection commands\n\t4. Classic SSL commands\n\t5. HTMLInjection commands.\n";
+	print "\nThe following configuration lines will get errors in ".$buildVersion." and both they and dependent configuration will be removed from the configuration:\n";
+	system("cat $invalid_config_file");
+	print "\nThe nspepi upgrade tool can be useful in converting your configuration - see the documentation at https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html.\n";
+	print "\nNOTE: the nspepi tool doesn't convert the following configurations:\n\t1. SureConnect commands\n\t2. PriorityQueuing commands\n\t3. HTTP Denial of Service Protection commands\n\t4. Classic SSL commands\n\t5. HTMLInjection commands.\n";
     if (!(-z $deprecated_config_file)) {
         print "\nNOTE: some deprecated commands have also been detected in the config file, please check ".$deprecated_config_file." file for the deprecated commands.\n";
     } else {

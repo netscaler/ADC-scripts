@@ -110,6 +110,7 @@ class CLICommand(CLIParseTreeNode):
                        policy is advanced but need to set upgrade flag after conversion. adv_upgraded should be used
                        in such cases instead of upgraded.
         invalid - Indicates whether the command is invalid in 13.1 release.
+        has_csec_expr - Indicates that command has client security expression
         original_line - the text of the line that was parsed
         lineno - the line number (starting with 1) that the command occurs on
         op - the op-code for the command
@@ -119,6 +120,7 @@ class CLICommand(CLIParseTreeNode):
         self._upgraded = True
         self._adv_upgraded = True
         self._invalid = False
+        self._has_csec_expr = False
         self._original_line = ""
         self._lineno = 0
         self._op = op
@@ -208,6 +210,17 @@ class CLICommand(CLIParseTreeNode):
     @property
     def invalid(self):
         return self._invalid
+
+    def set_has_csec_expr(self):
+        """
+        Flags that this command has
+        Client security expression.
+        """
+        self._has_csec_expr = True
+
+    @property
+    def has_csec_expr(self):
+        return self._has_csec_expr
 
     def add_positional(self, positional_param):
         """ Adds a positional parameter at the end of the parameters.
