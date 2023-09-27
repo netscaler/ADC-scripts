@@ -37,7 +37,7 @@ q_s_expr = re.compile(r'\b((Q\.HOSTNAME)|(Q\.TRACKING)|'
                     r'(S\.CACHE_CONTROL)|(S\.TXID)|(S\.MEDIA))\b',
                     re.IGNORECASE)
 
-def convert_classic_expr(classic_expr):
+def convert_classic_expr(classic_expr, ignore_csec_expr = False):
     tree_obj = CLIParseTreeNode()
     info_msg = 'INFO: Expression is not converted' + \
         ' - most likely it is a valid advanced expression'
@@ -60,6 +60,14 @@ def convert_classic_expr(classic_expr):
     if nspepi_tool_output.startswith('ERROR:'):
         """Handles the error returned by old
         nspepi tool"""
+        csec_error_msg = 'Conversion of client ' + \
+            'security expression is not supported'
+        if (ignore_csec_expr and (csec_error_msg in \
+                                  nspepi_tool_output)):
+            return "Ignoring Client security Expression"
+        else:
+            logging.error(nspepi_tool_output)
+            return None
         logging.error(nspepi_tool_output)
         return None
     elif nspepi_tool_output.endswith(info_msg):

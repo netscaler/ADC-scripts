@@ -33,6 +33,14 @@ class CMP(cli_cmds.ConvertConfig):
         "ns_nocmp_xml_ie": "ns_adv_nocmp_xml_ie"
     }
 
+    builtin_adv_policies_bind_info = {
+        "ns_adv_nocmp_xml_ie": ["8700", "END"],
+        "ns_adv_nocmp_mozilla_47": ["8800", "END"],
+        "ns_adv_cmp_mscss": ["8900", "END"],
+        "ns_adv_cmp_msapp": ["9000", "END"],
+        "ns_adv_cmp_content_type": ["10000", "END"],
+    }
+
     def __init__(self):
         """
         Information about CMP commands.
@@ -206,6 +214,15 @@ class CMP(cli_cmds.ConvertConfig):
             return ["#" + str(bind_cmd_tree)]
 
         policy_name = bind_cmd_tree.positional_value(0).value
+        # Ignore the default advanced bindings
+        if policy_name in self.builtin_adv_policies_bind_info:
+            policy_info = self.builtin_adv_policies_bind_info[policy_name]
+            priority = bind_cmd_tree.keyword_value("priority")[0].value
+            next_prio_expr = bind_cmd_tree.keyword_value(
+                                    "gotoPriorityExpression")[0].value
+            if ((policy_info[0] == priority) and
+                (policy_info[1] == next_prio_expr)):
+                    return [bind_cmd_tree]
         self.replace_builtin_policy(bind_cmd_tree, policy_name, 0)
         bind_point = ""
         self.update_bind_info(bind_cmd_tree, bind_point)
