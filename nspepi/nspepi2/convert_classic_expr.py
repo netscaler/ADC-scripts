@@ -68,8 +68,6 @@ def convert_classic_expr(classic_expr, ignore_csec_expr = False):
         else:
             logging.error(nspepi_tool_output)
             return None
-        logging.error(nspepi_tool_output)
-        return None
     elif nspepi_tool_output.endswith(info_msg):
         """old nspepi tool didn't convert the expression,
         so return input expression"""

@@ -230,7 +230,6 @@ def main():
         help=argparse.SUPPRESS)
     try:
         args = arg_parser.parse_args()
-        print(args)
     except IOError as e:
         exit(str(e))
     # obtain logging parameters and setup logging
@@ -245,7 +244,6 @@ def main():
     # For -v and -e options, logs will be seen on console and warn file.
     # For other options, logs will only be in warn file and not on console.
     setup_logging(log_file_name, logging.WARNING, err_file_name, debug_file_name, args.verbose or args.expression is not None)
-    setup_logging(log_file_name, logging.WARNING, debug_file_name, args.verbose or args.expression is not None)
     convert_cli_commands.convert_cli_init()
     # convert classic policy expression if given as an argument
     if args.expression is not None:

@@ -2335,8 +2335,8 @@ class ContentSwitching(ConvertConfig):
                         # Get truncated name if truncated.
                         if action_name in overlength_action_names:
                             truncated_act_name = overlength_action_names[
-                                action_name]
-                    if need_new_policy:
+                                    action_name]
+                if need_new_policy:
                     new_policy_name = "nspepi_adv_" + policy_name + '_' + \
                             vserver_name
                     # If CS vserver is configured with caseSensitive
