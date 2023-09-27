@@ -38,7 +38,6 @@ import convert_cli_commands
 file_log_handler = None
 console_log_handler = None
 debug_log_handler = None
-error_log_handler = None
 
 def create_file_log_handler(file_name, log_level):
     """
@@ -62,13 +61,12 @@ def create_file_log_handler(file_name, log_level):
     file_handler.setFormatter(fh_format)
     return file_handler
 
-def setup_logging(log_file_name, file_log_level, error_file_name, debug_file_name, console_output_needed):
+def setup_logging(log_file_name, file_log_level, debug_file_name, console_output_needed):
     """
     Sets up logging for the program.
 
     Args:
         log_file_name: The name of the log file
-        error_file_name: The name of the error log file
         file_log_level: The level of logs to put in log_file_name file
         debug_file_name: The name of the debug log file
         console_output_needed: True if logs need to be seen on console
@@ -76,22 +74,17 @@ def setup_logging(log_file_name, file_log_level, error_file_name, debug_file_nam
     global file_log_handler
     global console_log_handler
     global debug_log_handler
-    global error_log_handler
     # create logger
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     # if called multiple times, remove existing handlers
     logger.removeHandler(file_log_handler)
     logger.removeHandler(console_log_handler)
-    logger.removeHandler(console_log_handler)
-    logger.removeHandler(error_log_handler)
+    logger.removeHandler(debug_log_handler)
     # create file handler
     file_log_handler = create_file_log_handler(log_file_name, file_log_level)
     # add the handlers to the logger
     logger.addHandler(file_log_handler)
-    if error_file_name:
-        error_log_handler = create_file_log_handler(error_file_name, logging.ERROR)
-        logger.addHandler(error_log_handler)
     if debug_file_name:
         debug_log_handler = create_file_log_handler(debug_file_name, logging.DEBUG)
         logger.addHandler(debug_log_handler)
@@ -226,10 +219,9 @@ def main():
     arg_parser.add_argument(
         '-V', '--version', action='version',
         version='%(prog)s {}'.format(__version__))
-    arg_parser.add_argument('-E', '--newErrorFileName', action="store_true",
-        help=argparse.SUPPRESS)
     try:
         args = arg_parser.parse_args()
+        print(args)
     except IOError as e:
         exit(str(e))
     # obtain logging parameters and setup logging
@@ -239,11 +231,10 @@ def main():
         conf_file_path = os.path.dirname(args.infile)
         conf_file_name = os.path.basename(args.infile)
     log_file_name = os.path.join(conf_file_path, 'warn_' + conf_file_name)
-    err_file_name = os.path.join(conf_file_path, 'error_' + conf_file_name) if args.newErrorFileName else None
     debug_file_name = os.path.join(conf_file_path, 'debug_' + conf_file_name) if args.debug else None
     # For -v and -e options, logs will be seen on console and warn file.
     # For other options, logs will only be in warn file and not on console.
-    setup_logging(log_file_name, logging.WARNING, err_file_name, debug_file_name, args.verbose or args.expression is not None)
+    setup_logging(log_file_name, logging.WARNING, debug_file_name, args.verbose or args.expression is not None)
     convert_cli_commands.convert_cli_init()
     # convert classic policy expression if given as an argument
     if args.expression is not None:
@@ -271,9 +262,6 @@ def main():
         with open(args.infile, 'r') as infile:
             with open(new_path, 'w') as outfile:
                 convert_config_file(infile, outfile, args.verbose)
-                if err_file_name:
-                    if os.path.getsize(err_file_name) == 0:
-                        os.remove(err_file_name)
                 if os.path.getsize(log_file_name) == 0:
                     error_warn_msg = ".\nConversion is successful, no error or warning is generated."
                     os.remove(log_file_name)
@@ -284,7 +272,6 @@ def main():
                       + conf_file_name + error_warn_msg) 
                 if args.debug:
                     print("Check debug_" + conf_file_name + " file for debug logs.")
-    print("\nUse nspepi tool available at https://github.com/citrix/ADC-scripts/tree/master/nspepi for the most complete and up-to-date version.")
 
 
 if __name__ == '__main__':

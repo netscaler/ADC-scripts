@@ -37,7 +37,7 @@ q_s_expr = re.compile(r'\b((Q\.HOSTNAME)|(Q\.TRACKING)|'
                     r'(S\.CACHE_CONTROL)|(S\.TXID)|(S\.MEDIA))\b',
                     re.IGNORECASE)
 
-def convert_classic_expr(classic_expr, ignore_csec_expr = False):
+def convert_classic_expr(classic_expr):
     tree_obj = CLIParseTreeNode()
     info_msg = 'INFO: Expression is not converted' + \
         ' - most likely it is a valid advanced expression'
@@ -53,23 +53,15 @@ def convert_classic_expr(classic_expr, ignore_csec_expr = False):
         of the converted string, so remove that character."""
         nspepi_tool_output = nspepi_tool_output.rstrip()
     except subprocess.CalledProcessError as exc:
-        # Log the command which is failing
-        logging.error(exc)
-        # Log the error message
-        logging.error(exc.output)
+        # Log the command which is failing and also the reason
+        logging.error(str(exc) + " : [" + str(exc.output) + "]")
         return None
     nspepi_tool_output = nspepi_tool_output.decode()
     if nspepi_tool_output.startswith('ERROR:'):
         """Handles the error returned by old
         nspepi tool"""
-        csec_error_msg = 'Conversion of client ' + \
-            'security expression is not supported'
-        if (ignore_csec_expr and (csec_error_msg in \
-                                  nspepi_tool_output)):
-            return "Ignoring Client security Expression"
-        else:
-            logging.error(nspepi_tool_output)
-            return None
+        logging.error(nspepi_tool_output)
+        return None
     elif nspepi_tool_output.endswith(info_msg):
         """old nspepi tool didn't convert the expression,
         so return input expression"""
@@ -102,7 +94,7 @@ def convert_adv_expr(advanced_expr):
     body_expr_without_arg = is_body_expr_without_arg_present(advanced_expr)
     if body_expr_without_arg:
         logging.error("Body size needs to process is not present "
-            "in HTTP.REQ.BODY expression, please privoide the body size.")
+            "in HTTP.REQ.BODY expression, please provide the body size. : [{}]".format(advanced_expr))
         return None
     advanced_expr = convert_q_s_expr(advanced_expr)
     return convert_sys_eval_classic_expr(advanced_expr)
@@ -169,7 +161,7 @@ def convert_sys_eval_classic_expr(advanced_expr):
         classic_exp_info = PILex.get_pi_string(
             advanced_expr[arg_start_index:])
         if classic_exp_info is None:
-            logging.error("Error in converting expression: {}".format(
+            logging.error("Error in converting expression : [{}]".format(
                 original_expr))
             return None
         classic_expr = classic_exp_info[0]
@@ -184,7 +176,7 @@ def convert_sys_eval_classic_expr(advanced_expr):
             sys_end_index += 1
         if (sys_end_index >= advanced_expr_length or
            advanced_expr[sys_end_index] != ')'):
-            logging.error("Error in converting expression: {}".format(
+            logging.error("Error in converting expression : [{}]".format(
                 original_expr))
             return None
         converted_expr = convert_classic_expr(classic_expr)
@@ -192,7 +184,7 @@ def convert_sys_eval_classic_expr(advanced_expr):
             # Result from convert_classic_expr will have enclosing quotes.
             converted_expr = cli_commands.remove_quotes(converted_expr)
         if converted_expr is None or converted_expr == classic_expr:
-            logging.error("Error in converting expression: {}".format(
+            logging.error("Error in converting expression: [{}]".format(
                 original_expr))
             return None
         # Converted expression should be enclosed in braces because

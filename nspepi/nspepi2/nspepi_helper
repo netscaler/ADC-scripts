@@ -158,11 +158,11 @@ my %EXPR_LIST=(
 
 # List of classic expressions that are not convertable
 my @CSEC_BLOCKED_LIST=(
-    'CLIENT\.APPLICATION',
-    'CLIENT\.FILE',
-    'CLIENT\.OS',
-    'CLIENT\.REG',
-    'CLIENT\.SVC',
+    'CLIENT.APPLICATION',
+    'CLIENT.FILE',
+    'CLIENT.OS',
+    'CLIENT.REG',
+    'CLIENT.SVC',
     'f_5_TrendMicroOfficeScan_7_3',
     'f_5_sygate_5_6',
     'f_5_zonealarm_6_5',
@@ -180,15 +180,15 @@ my @CSEC_BLOCKED_LIST=(
 );
 
 my @FILE_BLOCKED_LIST=(
-    'FS\.COMMAND',
-    'FS\.DIR',
-    'FS\.DOMAIN',
-    'FS\.FILE',
-    'FS\.PATH',
-    'FS\.SERVER',
-    'FS\.SERVERIP',
-    'FS\.SERVICE',
-    'FS\.USER',
+    'FS.COMMAND',
+    'FS.DIR',
+    'FS.DOMAIN',
+    'FS.FILE',
+    'FS.PATH',
+    'FS.SERVER',
+    'FS.SERVERIP',
+    'FS.SERVICE',
+    'FS.USER',
 );
 
 my @BLOCKED_LIST=(
@@ -305,7 +305,7 @@ sub convertExpression
     }
     # Check for client security expression expressions
     foreach (@CSEC_BLOCKED_LIST) {
-        if ($expression  =~ /\b$_/i) {
+        if ($expression  =~ /$_/i) {
             print_it($LFILE,"$line\n");
             err_handle $ERR_CSEC_BLOCKED_MSG;
             return;
@@ -313,7 +313,7 @@ sub convertExpression
     }
     # Check for file system based expression expressions
     foreach (@FILE_BLOCKED_LIST) {
-        if ($expression  =~ /\b$_/i) {
+        if ($expression  =~ /$_/i) {
             print_it($LFILE,"$line\n");
             err_handle $ERR_FILE_BLOCKED_MSG;
             return;
@@ -321,7 +321,7 @@ sub convertExpression
     }
     # Check for blocked expressions
     foreach (@BLOCKED_LIST) {
-        if ($expression  =~ /\b$_/i) {
+        if ($expression  =~ /$_/i) {
             my $err_msg = "Conversion of $_ expression is not supported";
             print_it($LFILE,"$line\n");
             err_handle $err_msg;
@@ -814,38 +814,12 @@ sub identifyExpressions
                 my $OPERATOR=$1;
                 $expr_params=$2;
                 my $ARG = extractArgument();
-                if ($ARG =~ /^\S{3}\, (\d{1,2}) (\S{3}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) (\S{3})$/) {
-                    # Handling RFC822 format: Tue, 05 Nov 1994 08:12:31 GMT
+                if ($ARG =~ /^\S{3}\, (\d{2}) (\S{3}) (\d{4}) (\d{2}):(\d{2}):(\d{2}) (\S{3})$/) {
                     $ARG = "$7 $3 $2 $1 $4h $5m $6s";
                     parseNumericOperator($OPERATOR,$ARG);
                     return;
-                } elsif ($ARG =~ /^\S{3}\, (\d{1,2})-(\S{3})-(\d{4}) (\d{2}):(\d{2}):(\d{2}) (\S{3})$/) {
-                    # Handling cookie format: Tue, 05-Nov-1994 08:12:31 GMT
-                    $ARG = "$7 $3 $2 $1 $4h $5m $6s";
-                    parseNumericOperator($OPERATOR,$ARG);
-                    return;
-                } elsif ($ARG =~ /^\S{3} (\S{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4}) (\S{3})$/) {
-                    # Handling asctime format: Tue Nov 4 08:12:31 1994 GMT
-                    $ARG = "$7 $6 $1 $2 $3h $4m $5s";
-                    parseNumericOperator($OPERATOR,$ARG);
-                    return;
-                } elsif ($ARG =~ /^\S{3} (\S{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/) {
-                    # Handling asctime format: Tue Nov 4 08:12:31 1994 GMT
-                    $ARG = "GMT $6 $1 $2 $3h $4m $5s";
-                    parseNumericOperator($OPERATOR,$ARG);
-                    return;
-                } elsif ($ARG =~ /^\S{5,8}\, (\d{1,2})-(\S{3})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) (\S{3})$/) {
-                    # Handling RFC850 format: Tuesday, 05-Nov-94 08:12:31 GMT
-                    my $year = int($3);
-                    if ($year > 70) {
-                        $year = 1900 + $year;
-                    } else {
-                        $year = 2000 + $year;
-                    }
-                    $ARG = "GMT $year $2 $1 $5h $5m $6s";
-                    parseNumericOperator($OPERATOR,$ARG);
-                    return;
-                } else {
+                }
+                else {
                     err_handle $ERR_OPERATOR_MSG;
                     return;
                 }

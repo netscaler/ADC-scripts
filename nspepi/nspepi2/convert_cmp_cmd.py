@@ -33,14 +33,6 @@ class CMP(cli_cmds.ConvertConfig):
         "ns_nocmp_xml_ie": "ns_adv_nocmp_xml_ie"
     }
 
-    builtin_adv_policies_bind_info = {
-        "ns_adv_nocmp_xml_ie": ["8700", "END"],
-        "ns_adv_nocmp_mozilla_47": ["8800", "END"],
-        "ns_adv_cmp_mscss": ["8900", "END"],
-        "ns_adv_cmp_msapp": ["9000", "END"],
-        "ns_adv_cmp_content_type": ["10000", "END"],
-    }
-
     def __init__(self):
         """
         Information about CMP commands.
@@ -208,22 +200,12 @@ class CMP(cli_cmds.ConvertConfig):
                 " with the advanced configuration, so if we convert this"
                 " config then functionality will change. If command is"
                 " required please take a backup because comments will"
-                " not be saved in ns.conf after triggering 'save ns config': {}").
+                " not be saved in ns.conf after triggering 'save ns config' : [{}]").
                 format(str(bind_cmd_tree).strip())
             )
             return ["#" + str(bind_cmd_tree)]
 
         policy_name = bind_cmd_tree.positional_value(0).value
-        # Ignore the default advanced bindings
-        if policy_name in self.builtin_adv_policies_bind_info:
-            policy_info = self.builtin_adv_policies_bind_info[policy_name]
-            priority = bind_cmd_tree.keyword_value("priority")[0].value
-            next_prio_expr = bind_cmd_tree.keyword_value(
-                                    "gotoPriorityExpression")[0].value
-            if ((policy_info[0] == priority) and
-                (policy_info[1] == next_prio_expr)):
-                    return [bind_cmd_tree]
-
         self.replace_builtin_policy(bind_cmd_tree, policy_name, 0)
         bind_point = ""
         self.update_bind_info(bind_cmd_tree, bind_point)
@@ -373,7 +355,7 @@ class CMP(cli_cmds.ConvertConfig):
                     " Now classic policies are converted to advanced. "
                     "This will change the functionality. CMP policy bindings "
                     "are commented out. Modify the bindings of CMP policies "
-                    "manually.").format(bind_point)
+                    "manually. : [{}]").format(bind_point, bind_point)
                 )
                 conflict_exists = True
             elif self._cmp_bind_info[global_bind_point][
@@ -386,7 +368,7 @@ class CMP(cli_cmds.ConvertConfig):
                     "converted to advanced. This will change the "
                     "functionality. CMP policy bindings are commented out. "
                     "Modify the bindings of CMP policies "
-                    "manually.").format(bind_point)
+                    "manually. : [{}]").format(bind_point, bind_point)
                 )
                 conflict_exists = True
         return conflict_exists

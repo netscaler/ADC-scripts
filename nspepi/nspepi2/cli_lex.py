@@ -176,8 +176,7 @@ class Lexer(object):
                     else:
                         self.advance_token(self._length)
                         token_type = "ERROR"
-                        logging.error("Data: {}".format(self._data))
-                        logging.error("Unbalanced closed parenthesis")
+                        logging.error("Unbalanced closed parenthesis : [{}]".format(self._data))
                         break
             elif self._data[self._lex_pos] == "\\":
                 # backslashes are escapes inside quotes
@@ -187,9 +186,7 @@ class Lexer(object):
                         self.advance_and_append_token(
                                         self._data[self._lex_pos])
                         token_type = "ERROR"
-                        logging.error("Data: {}".format(self._data))
-                        logging.error("Blackslashes inside quotes are "
-                                      "followed by end of the command")
+                        logging.error("Blackslashes inside quotes are followed by end of the command : [{}]".format(self._data))
                         break
                     if self._data[self._lex_pos + 1] == 't':
                         self.advance_and_append_token('\t', 2)
@@ -211,8 +208,7 @@ class Lexer(object):
         if state in "\"'" or parenthesis_counter > 0:
             # error token for not matching with any rule
             token_type = "ERROR"
-            logging.error("Data: {}".format(self._data))
-            logging.error("Unbalanced parenthesis or quotes")
+            logging.error("Unbalanced parenthesis or quotes : [{}]".format(self._data))
         next_token = LexToken(token_type, self._token_value, 1,
                               self._lex_pos - 1)
         return next_token
@@ -333,9 +329,7 @@ class Lexer(object):
                         self.advance_and_append_token(
                                         self._data[self._lex_pos])
                         token_type = "ERROR"
-                        logging.error("Data: {}".format(self._data))
-                        logging.error("Blackslashes inside quotes are "
-                                      "followed by end of the expression")
+                        logging.error("Blackslashes inside quotes are followed by end of the expression : [{}]".format(self._data))
                         break
                     if self._data[self._lex_pos + 1] == 't':
                         self.advance_and_append_token('\t', 2)
@@ -357,13 +351,11 @@ class Lexer(object):
         if state in "\"'":
             # error token for not matching with any rule
             token_type = "ERROR"
-            logging.error("Data: {}".format(self._data))
-            logging.error("Unbalanced quotes")
+            logging.error("Unbalanced quotes : [{}]".format(self._data))
         elif state == "REGEX":
             # error token for not matching with any rule
             token_type = "ERROR"
-            logging.error("Data: {}".format(self._data))
-            logging.error("Unterminated regex")
+            logging.error("Unterminated regex : [{}]".format(self._data))
         next_token = LexToken(token_type, self._token_value, 1,
                               self._lex_pos - 1)
         return next_token

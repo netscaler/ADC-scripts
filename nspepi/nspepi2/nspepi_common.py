@@ -21,8 +21,7 @@ import inspect
 
 import nspepi_parse_tree
 
-currentfile = os.path.abspath(inspect.getfile(inspect.currentframe()))
-currentdir = os.path.dirname(currentfile)
+currentdir = os.path.dirname(os.path.abspath(__file__))
 parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
@@ -935,9 +934,9 @@ class PoliciesAndBinds(object):
         for v in weights.values():
             same_weight_group_set = set([o.entity_name for o in v])
             if len(same_weight_group_set) > 1:
-                logging.error("Groups: {} having the same weight and bindings"
+                logging.error("Groups having the same weight and bindings"
                               " have no defined ordering in Advanced Policy"
-                              " evaluation.".format(
+                              " evaluation. : {}".format(
                                   ", ".join(sorted(same_weight_group_set))))
                 res.update(v)
         logging.debug("do_priority_analysis_for_all_users_groups(): ")
