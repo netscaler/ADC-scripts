@@ -208,7 +208,7 @@ class CMP(cli_cmds.ConvertConfig):
                 " with the advanced configuration, so if we convert this"
                 " config then functionality will change. If command is"
                 " required please take a backup because comments will"
-                " not be saved in ns.conf after triggering 'save ns config': {}").
+                " not be saved in ns.conf after triggering 'save ns config' : [{}]").
                 format(str(bind_cmd_tree).strip())
             )
             return ["#" + str(bind_cmd_tree)]
@@ -223,7 +223,6 @@ class CMP(cli_cmds.ConvertConfig):
             if ((policy_info[0] == priority) and
                 (policy_info[1] == next_prio_expr)):
                     return [bind_cmd_tree]
-
         self.replace_builtin_policy(bind_cmd_tree, policy_name, 0)
         bind_point = ""
         self.update_bind_info(bind_cmd_tree, bind_point)
@@ -373,7 +372,7 @@ class CMP(cli_cmds.ConvertConfig):
                     " Now classic policies are converted to advanced. "
                     "This will change the functionality. CMP policy bindings "
                     "are commented out. Modify the bindings of CMP policies "
-                    "manually.").format(bind_point)
+                    "manually. : [{}]").format(bind_point, bind_point)
                 )
                 conflict_exists = True
             elif self._cmp_bind_info[global_bind_point][
@@ -386,7 +385,7 @@ class CMP(cli_cmds.ConvertConfig):
                     "converted to advanced. This will change the "
                     "functionality. CMP policy bindings are commented out. "
                     "Modify the bindings of CMP policies "
-                    "manually.").format(bind_point)
+                    "manually. : [{}]").format(bind_point, bind_point)
                 )
                 conflict_exists = True
         return conflict_exists

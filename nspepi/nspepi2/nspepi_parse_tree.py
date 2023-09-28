@@ -210,7 +210,7 @@ class CLICommand(CLIParseTreeNode):
     @property
     def invalid(self):
         return self._invalid
-
+    
     def set_has_csec_expr(self):
         """
         Flags that this command has

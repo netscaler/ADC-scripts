@@ -26,10 +26,8 @@ def check_classic_expr(classic_expr):
         of the converted string, so remove that character."""
         nspepi_tool_output = nspepi_tool_output.rstrip()
     except subprocess.CalledProcessError as exc:
-        # Log the command which is failing
-        logging.error(exc)
-        # Log the error message
-        logging.error(exc.output)
+        # Log the command which is failing and also the error message
+        logging.error(exc.output + " : [" + exc + "]")
         return None
     nspepi_tool_output = nspepi_tool_output.decode()
     if nspepi_tool_output.startswith('ERROR:'):

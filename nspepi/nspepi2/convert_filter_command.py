@@ -190,6 +190,7 @@ bind responder global pol1 <positive priority integer> END -type REQ_DEFAULT
 bind rewrite global pol2 <positive priority integer> NEXT -type RES_DEFAULT
 bind <lb|cs|cr> vserver <vs name> -policyName pol1 [-priority <positive_integer>]) -gotoPriorityExpression NEXT -TYPE REQUEST
 bind <lb|cs|cr> vserver <vs name> -policyName pol2 [-priority <positive_integer>]) -gotoPriorityExpression NEXT -TYPE RESPONSE
+
 '''
 
 import re
@@ -395,7 +396,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                                 "command [{}] is not supported in this tool."
                                 "".format(str(original_cmd).strip()))
                             return [action_parse_tree]
-
+                
                 else:
                     # Prebody/postbody value indicates that this config is
                     # being used for HTMLinjection feature, and conversion
@@ -409,9 +410,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                     self._htmlInjection["action"].append(actionName)
                     action_parse_tree_list = [original_cmd]
                     logging.error(
-                        "Conversion of HTMLInjection feature related"
-                        " command [{}] is not supported in this tool."
-                        "".format(str(original_cmd).strip()))
+                        "Conversion of [{}] not supported in this tool. : [{}]"
+                        "".format(str(original_cmd).strip(), str(original_cmd).strip()))
             elif (action_type == "corrupt"):
                 """
                 Transformation for filter action of CORRUPT as actionType
@@ -532,7 +532,6 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 self._action_command[lower_actionName].append(responder_action)
                 self._action_command[lower_actionName].append(rewrite_action)
 
-
                 # Store actionType and actionName
                 self._actionTypeName[action_type].append(str(
                     rewrite_action.positional_value(0).value.lower()))
@@ -556,8 +555,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 action_parse_tree_list = [original_cmd]
                 self._forward["action"].append(actionName)
                 logging.error(
-                        "Conversion of FORWARD action type related command"
-                        " [{}] not supported in this tool".format(str(original_cmd).strip()))
+                        "Conversion of [{}] not supported in this tool. : [{}]"
+                        "".format(str(original_cmd).strip(), str(original_cmd).strip()))
 
         else:
             """
@@ -568,7 +567,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
             action_parse_tree_list = [original_cmd]
             logging.error(
                 'Error in converting original command since' +
-                ' CLI context of filter feature is invalid: ' +
+                ' CLI context of filter feature is invalid : ' +
                 '[{}]'.format(str(original_cmd)))
         return action_parse_tree_list
 
@@ -621,7 +620,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 "not supported in this tool.".format(str(original_cmd).strip()))
             self._forward["policy"].append(policyName)
             return [original_cmd]
-
+        
         for dict_key, dict_value in self._actionTypeName.items():
             """ Extract key and value from stored _actionTypeName
             dictionary through action convertion """
@@ -734,7 +733,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         if policy_type == "advanced":
             # Return same if policy_type is marked advanced
             return [bind_parse_tree]
-
+        
         if policy_name in self._forward["policy"]:
             logging.error(
                 "Conversion of FORWARD action type related command [{}]"
@@ -746,7 +745,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 "Conversion of HTMLInjection feature related command [{}]"
                 "not supported in this tool.".format(str(bind_parse_tree).strip()))
             return [bind_parse_tree]
-
+        
         vs_name = bind_parse_tree.positional_value(0).value.lower()
         if cli_cmds.vserver_protocol_dict[vs_name] not in ("HTTP", "SSL"):
             logging.error("Filter policy doesn't work with the non-http protocol"
@@ -754,7 +753,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                           " policy to the non-http vserver, then either the"
                           " config will fail or the functionality will change,"
                           " so please review and remove such config"
-                          " command [{}].".format(str(bind_parse_tree).strip()))
+                          " command : [{}]".format(str(bind_parse_tree).strip()))
             return ['#' + str(bind_parse_tree)]
         flow_type = ("RESPONSE" if (self._converted_pol_param[
             policy_name][0] == "resAction") else "REQUEST")
@@ -795,7 +794,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 " with the advanced configuration, so if we convert this"
                 " config then functionality will change. If command is"
                 " required please take a backup because comments will"
-                " not be saved in ns.conf after triggering 'save ns config': {}").
+                " not be saved in ns.conf after triggering 'save ns config' : [{}]").
                 format(str(bind_parse_tree).strip())
             )
             return ["#" + str(bind_parse_tree)]
@@ -812,7 +811,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 "Conversion of HTMLInjection feature related command [{}]"
                 "not supported in this tool.".format(str(bind_parse_tree).strip()))
             return [bind_parse_tree]
-
+        
         policy_type = common.pols_binds.policies[policy_name].policy_type
         if policy_type == "advanced":
             # Return input if policy_type is marked with "advanced"
@@ -855,7 +854,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         logging.error("Conversion of HTMLInjection feature"
             " related command [{}] is not supported".format(str(commandParseTree).strip()))
         return [commandParseTree]
-
+    
     @common.register_for_final_call
     def get_converted_cmds(self):
         """
@@ -961,7 +960,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         logging.error("In ns.conf, existing advanced feature policies's bind commands have"
               " gotoPriorityExpression as END/USE_INVOCATION_RESULT for HTTP/S."
               " Priorities and gotoPriorityExpression will need to"
-              " be added modified/added manually in [{}].".format(str(cmd).strip()))
+              " be added modified/added manually. : [{}]".format(str(cmd).strip()))
         bind_cmd = '#' + str(cmd)
         return bind_cmd
 
@@ -1046,7 +1045,7 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         the policylabel
         label_name - rewrite policy label name
         vserver_name - vserver name in which filter policy is bound
-        vserver_group - vserver group: lb, cs or cr
+	vserver_group - vserver group: lb, cs or cr
         is_req_flow_type - True if binding is for request side,
                            otherwise False
         """

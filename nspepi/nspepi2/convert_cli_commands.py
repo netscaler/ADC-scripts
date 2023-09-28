@@ -151,8 +151,8 @@ def print_csec_error_message(expr_list):
     """
     for expr_name in expr_list:
         if not NamedExpression.csec_expr_list[expr_name]["error_displayed"]:
-            logging.error(("Conversion of clientSecurityMessage based expression [{}] "
-                           "is not supported, please do the conversion manually.")
+            logging.error(("Conversion of clientSecurityMessage based expression "
+                           "is not supported, please do the conversion manually. : [{}]")
                            .format(str(NamedExpression.csec_expr_list[expr_name]["tree"]).strip()))
             NamedExpression.csec_expr_list[expr_name]["error_displayed"] = True
 
@@ -196,19 +196,16 @@ class ConvertConfig(object):
         csec_expr_info = has_client_security_expressions(rule_expr)
         if csec_expr_info[0]:
             print_csec_error_message(csec_expr_info[1])
-            logging.error('Error in converting command : ' +
-                          str(commandParseTree).strp())
+            logging.error('Error in converting command : [' +
+                          str(commandParseTree).strp() + ']')
             return commandParseTree
 
         converted_expr = convert_classic_expr.convert_classic_expr(rule_expr, ignore_csec_expr)
         if converted_expr is None:
-            logging.error('Error in converting command : ' +
-                          str(commandParseTree).strip())
+            logging.error('Error in converting command : [' +
+                          str(commandParseTree).strip() + ']')
             converted_expr = rule_expr
         else:
-            if (converted_expr == "Ignoring Client security Expression"):
-                commandParseTree.set_has_csec_expr()
-                return commandParseTree
             # converted_expr will have quotes and rule_expr will not have
             # quotes. Since we are comparing these 2 expressions, removing
             # quotes from converted_expr.
@@ -240,14 +237,14 @@ class ConvertConfig(object):
         csec_expr_info = has_client_security_expressions(rule_expr)
         if csec_expr_info[0]:
             print_csec_error_message(csec_expr_info[1])
-            logging.error('Error in converting command : ' +
-                          str(commandParseTree).strip())
+            logging.error('Error in converting command : [' +
+                          str(commandParseTree).strip() + ']')
             return commandParseTree
 
         converted_expr = convert_classic_expr.convert_classic_expr(rule_expr)
         if converted_expr is None:
-            logging.error('Error in converting command : ' +
-                          str(commandParseTree).strip())
+            logging.error('Error in converting command : [' +
+                          str(commandParseTree).strip() + ']')
             converted_expr = rule_expr
         else:
             # converted_expr will have quotes and rule_expr will not have
@@ -286,8 +283,8 @@ class ConvertConfig(object):
                 continue
             converted_expr = convert_classic_expr.convert_adv_expr(adv_expr)
             if converted_expr is None:
-                logging.error('Error in converting command : ' +
-                              str(original_tree).strip())
+                logging.error('Error in converting command : [' +
+                              str(original_tree).strip() + ']')
                 return original_tree
             else:
                 converted_expr = remove_quotes(converted_expr)
@@ -763,10 +760,10 @@ class ConvertConfig(object):
                 self.update_tree_arg(bind_info.parse_tree,
                                      bind_info.bind_arg_goto, new_goto)
             elif goto.upper() not in ("NEXT", "END", "USE_INVOCATION_RESULT"):
-                logging.error("gotoPriorityExpression in {} uses an"
+                logging.error("gotoPriorityExpression in this CLI command uses an"
                               " expression. Since the priorities for this"
                               " bindpoint have been renumbered, this"
-                              " expression will need to be modified manually."
+                              " expression will need to be modified manually. : [{}]"
                               "".format(str(bind_info.parse_tree)))
         return new_binds
 
@@ -792,10 +789,11 @@ class ConvertConfig(object):
                             " converted as [{}]. If the command is required"
                             " please take a backup because comments are not"
                             " saved in ns.conf after triggering"
-                            "'save ns config'.{}"
+                            "'save ns config'.{} : [{}]"
                             "".format(bind_info.orig_cmd.strip(),
                                       str(bind_info.parse_tree).strip(),
-                                      common.CMD_MOD_ERR_MSG))
+                                      common.CMD_MOD_ERR_MSG,
+                                      bind_info.orig_cmd.strip()))
                         bind_cmd_trees.append(
                             "# {}".format(str(bind_info.parse_tree)))
                     else:
@@ -863,10 +861,11 @@ class ConvertConfig(object):
                                     " required please take a backup because"
                                     " comments are not saved in ns.conf"
                                     " after triggering 'save ns config'."
-                                    "{}".format(
+                                    "{} : [{}]".format(
                                         bind_info.orig_cmd.strip(),
                                         str(bind_info.parse_tree).strip(),
-                                        common.CMD_MOD_ERR_MSG))
+                                        common.CMD_MOD_ERR_MSG,
+                                        bind_info.orig_cmd.strip()))
                                 bind_cmd_trees.append(
                                     "# {}".format(str(bind_info.parse_tree)))
                             else:
@@ -1214,7 +1213,7 @@ class TunnelTraffic(ConvertConfig):
                 " with the advanced configuration, so if we convert this"
                 " config then functionality will change. If command is"
                 " required please take a backup because comments will"
-                " not be saved in ns.conf after triggering 'save ns config': {}").
+                " not be saved in ns.conf after triggering 'save ns config' : [{}]").
                 format(str(commandParseTree).strip())
             )
             return ['#' + str(commandParseTree)]
@@ -1459,7 +1458,7 @@ class APPFw(ConvertConfig):
                 " with the advanced configuration, so if we convert this"
                 " config then functionality will change. If command is"
                 " required please take a backup because comments will"
-                " not be saved in ns.conf after triggering 'save ns config': {}").
+                " not be saved in ns.conf after triggering 'save ns config' : [{}]").
                 format(str(commandParseTree).strip()))
             return ['#' + str(commandParseTree)]
 
@@ -1591,7 +1590,7 @@ class HTTP_CALLOUT(ConvertConfig):
             """
             logging.error(("HTTP callout name {} is conflicting with"
                            " named expression entity name, please resolve"
-                           " the conflict.").format(callout_name))
+                           " the conflict. : [{}]").format(callout_name,  str(commandParseTree)))
         else:
             HTTP_CALLOUT.register_policy_entity_name(commandParseTree)
         commandParseTree = HTTP_CALLOUT.convert_adv_expr_list(
@@ -1759,7 +1758,7 @@ class NamedExpression(ConvertConfig):
             NamedExpression.csec_expr_list[lower_expr_name]["error_displayed"] = False
             NamedExpression.register_classic_entity_name(commandParseTree)
             return [commandParseTree]
-
+        
         if ((lower_expr_name in reserved_word_list) or
             (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None)):
             logging.error(("Expression name {} is invalid for advanced "
@@ -1972,8 +1971,8 @@ class ContentSwitching(ConvertConfig):
                 converted_expr = convert_classic_expr.convert_classic_expr(
                     rule_expr)
                 if converted_expr is None:
-                    logging.error('Error in converting command : ' +
-                                  str(commandParseTree).strip())
+                    logging.error('Error in converting command : [' +
+                                  str(commandParseTree).strip() + ']')
                     return [commandParseTree]
                 converted_expr = converted_expr.strip('"')
                 domain_name = commandParseTree.keyword_value('domain')[0] \
@@ -2137,7 +2136,7 @@ class ContentSwitching(ConvertConfig):
                 # CS policies without action issue.
                 if cs_vserver_name not in self._cs_policy_binding_info:
                     self._cs_policy_binding_info[cs_vserver_name] = []
-
+                
                 if commandParseTree.keyword_exists("targetLBVserver"):
                     vserver_name = commandParseTree.keyword_value(
                         "targetLBVserver")[0].value
@@ -2165,7 +2164,7 @@ class ContentSwitching(ConvertConfig):
                         ci_search = cs_vserver_name in self._cs_vserver_info_ci
                         if vserver_bind_info["case_insensitive"] != ci_search:
                             vserver_bind_info["diff_case_search"] = True
-
+                
                 self._cs_policy_binding_info[cs_vserver_name].append(
                                                         commandParseTree)
                 return []
@@ -2207,7 +2206,7 @@ class ContentSwitching(ConvertConfig):
         # to process the bindings.
         if not self._classic_policy_exists:
             return [commandParseTree]
-
+        
         policy_type = self.__class__.__name__
         if policy_name in self._policy_bind_info:
             cs_vserver_name = commandParseTree.positional_value(0).value
@@ -2215,7 +2214,7 @@ class ContentSwitching(ConvertConfig):
             # CS policies without action issue.
             if cs_vserver_name not in self._cs_policy_binding_info:
                 self._cs_policy_binding_info[cs_vserver_name] = []
-
+            
             vserver_name = commandParseTree.keyword_value("policyName")[1].value
             if "vserver_bind_info" not in self._policy_bind_info[policy_name]:
                 vserver_bind_info = {}
@@ -2292,12 +2291,13 @@ class ContentSwitching(ConvertConfig):
                         "bind cr vserver"):
                     vserver_name = bind_tree.keyword_value(
                         "policyName")[1].value
-
+                
                 set_ci_rule = False
-                if (is_cs_vserver and (cs_cr_vserver_name in self._cs_vserver_info_ci) and
-                        (policy_name in self._policy_url_info)):
-                    set_ci_rule = True
 
+                if (is_cs_vserver and (cs_cr_vserver_name in self._cs_vserver_info_ci) and
+                    (policy_name in self._policy_url_info)):
+                    set_ci_rule = True
+                
                 vserver_bind_info = self._policy_bind_info[policy_name]["vserver_bind_info"]
                 need_new_policy = False
                 need_new_action = False
@@ -2319,7 +2319,7 @@ class ContentSwitching(ConvertConfig):
                         # Check action name length. Max allowed length is 127
                         if len(action_name) > 127:
                             truncated_act_name, overlength_action_counter = \
-                                    self.truncate_name(action_name,
+                                self.truncate_name(action_name,
                                             overlength_action_names,
                                             overlength_action_counter)
                         pos = CLIPositionalParameter(truncated_act_name)
@@ -2336,7 +2336,6 @@ class ContentSwitching(ConvertConfig):
                         if action_name in overlength_action_names:
                             truncated_act_name = overlength_action_names[
                                     action_name]
-
                 if need_new_policy:
                     new_policy_name = "nspepi_adv_" + policy_name + '_' + \
                             vserver_name
@@ -2738,9 +2737,9 @@ class SSL(ConvertConfig):
         original_tree = copy.deepcopy(commandParseTree)
         convertedParseTree = SSL.convert_keyword_expr(commandParseTree, 'rule')
         if convertedParseTree.upgraded:
-            logging.error(("Classic SSL policy [{}] is not working from 10.1 release, "
+            logging.error(("Classic SSL policy is not working from 10.1 release, "
                            "please remove the classic SSL policy configuration "
-                           "from the config file").format(str(original_tree).strip()))
+                           "from the config file : [{}]").format(str(original_tree).strip()))
             return [original_tree]
         return [commandParseTree]
 
@@ -2753,9 +2752,9 @@ class SureConnect(ConvertConfig):
     @common.register_for_cmd("add", "sc", "policy")
     @common.register_for_cmd("set", "sc", "parameter")
     def convert_policy(self, commandParseTree):
-        logging.error(("SureConnect feature command [{}] conversion "
+        logging.error(("SureConnect feature command conversion "
                        "is not supported, please do the conversion "
-                       "manually").format(str(commandParseTree).strip()))
+                       "manually : [{}]").format(str(commandParseTree).strip()))
         return [commandParseTree]
 
 
@@ -2766,9 +2765,9 @@ class PriorityQueuing(ConvertConfig):
     """
     @common.register_for_cmd("add", "pq", "policy")
     def convert_policy(self, commandParseTree):
-        logging.error(("PriorityQueuing feature command [{}] conversion "
+        logging.error(("PriorityQueuing feature command conversion "
                        "is not supported, please do the conversion "
-                       "manually").format(str(commandParseTree).strip()))
+                       "manually : [{}]").format(str(commandParseTree).strip()))
         return [commandParseTree]
 
 
@@ -2779,9 +2778,9 @@ class HDoSP(ConvertConfig):
     """
     @common.register_for_cmd("add", "dos", "policy")
     def convert_policy(self, commandParseTree):
-        logging.error(("HDoSP feature command [{}] conversion "
+        logging.error(("HDoSP feature command conversion "
                        "is not supported, please do the conversion "
-                       "manually").format(str(commandParseTree).strip()))
+                       "manually : [{}]").format(str(commandParseTree).strip()))
         return [commandParseTree]
 
 

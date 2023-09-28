@@ -128,7 +128,7 @@ class LB(cli_cmds.ConvertConfig):
                     # CONTENTS exists but not a simple expression.
                     # Throw error and don't convert.
                     logging.error(("-rule in the following command has to be "
-                                  "converted manually: {}").format(
+                                  "converted manually : [{}]").format(
                                   str(add_lbvserver_parse_tree).strip()))
                 return [add_lbvserver_parse_tree]
 
@@ -169,10 +169,10 @@ class LB(cli_cmds.ConvertConfig):
                                  "format. This will result in functionality "
                                  "change when rule is used for persistenceType"
                                  " or lbMethod. To aviod the functionality "
-                                 "change, {} command is modified by removing "
-                                 "the following keywords: {}.").format(
-                                 str(original_tree).strip(),
-                                 ", ".join(removed_keywords)))
+                                 "change, command is modified by removing "
+                                 "the following keywords : {} : [{}]").format(
+                                 ", ".join(removed_keywords),
+                                 str(original_tree).strip()))
         return [add_lbvserver_parse_tree]
 
     def search_pattern(self, rule, index, found_expr_list):

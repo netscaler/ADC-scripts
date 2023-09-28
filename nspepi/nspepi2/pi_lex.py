@@ -58,7 +58,7 @@ class PILex(object):
                         hex_digits = int(hex_digits, 16)
                         if hex_digits > 127:
                             logging.error("Invalid hex value is used. Maximum "
-                                          "hex value allowed is 7f.")
+                                          "hex value allowed is 7f. : [{}]".format(expr))
                             return None
                         value += chr(hex_digits)
                     else:
@@ -73,7 +73,7 @@ class PILex(object):
                     oct_digits = int(oct_digits, 8)
                     if oct_digits > 127:
                         logging.error("Invalid octal value is used. Maximum "
-                                      "octal value allowed is 177.")
+                                      "octal value allowed is 177. : [{}]".format(expr))
                         return None
                     value += chr(oct_digits)
                 else:

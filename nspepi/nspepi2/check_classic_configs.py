@@ -134,8 +134,8 @@ class CheckConfig(object):
         rule_expr = rule_node.value
         converted_expr = check_classic_expr.check_classic_expr(rule_expr)
         if converted_expr is None:
-            logging.error('Error in checking command : ' +
-                          str(commandParseTree))
+            logging.error(('Error in checking command : [{}]').format(str(commandParseTree)))
+                          
         elif converted_expr == "Invalid Expression":
             commandParseTree.set_invalid()
         else:
@@ -168,8 +168,7 @@ class CheckConfig(object):
         rule_expr = rule_node[0].value
         converted_expr = check_classic_expr.check_classic_expr(rule_expr)
         if converted_expr is None:
-            logging.error('Error in checking command : ' +
-                          str(commandParseTree))
+            logging.error(('Error in checking command : [{}]').format(str(commandParseTree)))
         elif converted_expr == "Invalid Expression":
                 commandParseTree.set_invalid()
         else:
@@ -519,14 +518,14 @@ class NamedExpression(CheckConfig):
                            " and shouldn't be name of another policy entity"
                            "; words reserved for policy use may not be used;"
                            " underscores will be substituted for any invalid"
-                           " characters in corresponding advanced name")
-                          .format(expr_name))
+                           " characters in corresponding advanced name : [{}]")
+                          .format(expr_name, str(commandParseTree)))
 
         if commandParseTree.keyword_exists('clientSecurityMessage'):
             NamedExpression.register_classic_entity_name(commandParseTree)
             logging.warning(("Client security expressions are deprecated"
-                " using this command [{}], please use the"
-                " the advanced authentication policy command")
+                " using this command, please use the"
+                " the advanced authentication policy command. : [{}]")
                 .format(str(commandParseTree).strip()))
             return []
 
@@ -542,8 +541,8 @@ class NamedExpression(CheckConfig):
             """
             NamedExpression.register_policy_entity_name(commandParseTree)
             NamedExpression.register_classic_entity_name(original_tree)
-            logging.warning(("Classic expression has been deprecated in"
-                " command [{}], please use the advanced expression")
+            logging.warning(("Classic expression has been deprecated in the"
+                " following command, please use the advanced expression : [{}]")
                 .format(str(commandParseTree).strip()))
         else:
             NamedExpression.register_policy_entity_name(original_tree)
@@ -911,7 +910,7 @@ class Deprecation(CheckConfig):
         commandParseTree = Deprecation.check_pos_expr(commandParseTree, 1, False)
         if commandParseTree.invalid:
             logging.warning(("Classic expression in the rule field has been deprecated"
-                " for command [{}], please use the advanced expression")
+                " for the following command, please use the advanced expression : [{}]")
                 .format(str(commandParseTree).strip()))
         elif is_advanced_removed_expr_present(rule_expr):
             commandParseTree.set_invalid()
@@ -932,8 +931,8 @@ class Deprecation(CheckConfig):
         """
         Check the Authentication commands which have been deprecated
         """
-        logging.warning(("[{}] command has been deprecated,"
-            " please use the advanced authentication policy command")
+        logging.warning(("Following command has been deprecated,"
+            " please use the advanced authentication policy command : [{}]")
             .format(str(commandParseTree).strip()))
         return []
 
@@ -942,8 +941,8 @@ class Deprecation(CheckConfig):
         """
         Check the traffic domain command
         """
-        logging.warning(("[{}] command has been deprecated,"
-            " please use the admin partition feature")
+        logging.warning(("Command has been deprecated,"
+            " please use the admin partition feature. : [{}]")
             .format(str(commandParseTree).strip()))
         return []
 
@@ -955,8 +954,8 @@ class Deprecation(CheckConfig):
         """
         if commandParseTree.keyword_exists('rule'):
             logging.warning(("Client security expressions are deprecated"
-                " using this command [{}], please use the"
-                " the advanced authentication policy command")
+                " using this command, please use the"
+                " the advanced authentication policy command : [{}]")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -968,8 +967,8 @@ class Deprecation(CheckConfig):
         """
         if commandParseTree.keyword_exists('clientSecurity'):
             logging.warning(("Client security expressions are deprecated"
-                " using this command [{}], please use the"
-                " the advanced authentication policy command")
+                " using this command, please use the"
+                " the advanced authentication policy command : [{}]")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -982,7 +981,7 @@ class Deprecation(CheckConfig):
             sso_type = commandParseTree.keyword_value("ssotype")[0].value.lower()
             if sso_type == "selfauth":
                 logging.warning("Selfauth type has been deprecated"
-                    " in command [{}]".format(str(commandParseTree).strip()))
+                    " in command : [{}]".format(str(commandParseTree).strip()))
         return []
 
     @common.register_for_cmd("add", "vpn", "portaltheme")
@@ -996,8 +995,8 @@ class Deprecation(CheckConfig):
             if base_theme == "Default" or base_theme == "X1" \
                 or base_theme == "Greenbubble":
                     logging.warning(("Default, GreenBubble and X1 themes"
-                        " have been deprecated in command [{}],"
-                        " please use RfWebUI theme or RfWebUI based custom theme")
+                        " have been deprecated in the command,"
+                        " please use RfWebUI theme or RfWebUI based custom theme : [{}]")
                         .format(str(commandParseTree).strip()))
         return []
 
@@ -1013,8 +1012,8 @@ class Deprecation(CheckConfig):
             if base_theme == "Default" or base_theme == "X1" \
                 or base_theme == "Greenbubble":
                     logging.warning(("Default, GreenBubble and X1 themes"
-                        " have been deprecated in command [{}],"
-                        " please use RfWebUI theme or RfWebUI based custom theme")
+                        " have been deprecated in the command,"
+                        " please use RfWebUI theme or RfWebUI based custom theme : [{}]")
                         .format(str(commandParseTree).strip()))
         return []
 
@@ -1027,13 +1026,13 @@ class Deprecation(CheckConfig):
         action_type = commandParseTree.positional_value(1).value.lower()
         if action_type == "rewrite_response":
             logging.warning(("Rewrite_Response action type is deprecated in"
-                " command [{}], please use the replace_dns_answer_section"
-                " action type under Rewrite feature.")
+                " the command, please use the replace_dns_answer_section"
+                " action type under Rewrite feature. : [{}]")
                 .format(str(commandParseTree).strip()))
         elif action_type == "drop":
             logging.warning(("Drop action type is deprecated in"
-                " command [{}], please use the Drop"
-                " action type under Responder feature.")
+                " the command, please use the Drop"
+                " action type under Responder feature. : [{}]")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -1049,8 +1048,8 @@ class Deprecation(CheckConfig):
             feature_name = feature_node.value
             if feature_name in features_to_remove:
                 logging.warning("SC, PQ, HDOSP, and CF features"
-                    " have been deprecated in command [{}], please"
-                    " use the APPQOE, REWRITE, and RESPONDER features"
+                    " have been deprecated in the command, please"
+                    " use the APPQOE, REWRITE, and RESPONDER features : [{}]"
                     .format(str(commandParseTree).strip()))
                 break
         return []
@@ -1070,7 +1069,7 @@ class Deprecation(CheckConfig):
                 commandParseTree.set_invalid()
                 return [commandParseTree]
 
-        logging.warning(("[{}] command has been deprecated")
+        logging.warning(("Command has been deprecated : [{}]")
             .format(str(commandParseTree).strip()))
         return []
 
@@ -1096,7 +1095,7 @@ class Deprecation(CheckConfig):
         Check the Authentication commands which have been deprecated
         """
         if (int(build_version.split(".")[0]) > 13):
-            logging.warning(("[{}] command has been deprecated")
+            logging.warning(("Command has been deprecated : [{}]")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -1120,5 +1119,5 @@ class Responder(CheckConfig):
         action_type = commandParseTree.positional_value(1).value.lower()
         if action_type is "noop":
             logging.warning("NOOP action type has been deprecated"
-                " for command [{}]".format(str(commandParseTree).strip()))
+                " for the command : [{}]".format(str(commandParseTree).strip()))
         return []
