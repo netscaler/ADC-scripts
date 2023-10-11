@@ -64,6 +64,9 @@ class CMP(cli_cmds.ConvertConfig):
         self._cmp_bind_info = OrderedDict()
         self._initial_cmp_parameter = "advanced"
         self._classic_builtin_bind = OrderedDict()
+        self._only_lb_vserver_classic_bindings = True
+        self._only_lb_vserver_adv_bindings = True
+        self._only_global_res_default_bindings = True
 
     @common.register_for_init_call
     def store_builtin_cmp_policies(self):
@@ -79,6 +82,8 @@ class CMP(cli_cmds.ConvertConfig):
         Syntax:
            set cmp parameter -policyType ADVANCED
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         if cmp_param_tree.keyword_exists("policyType"):
             self._initial_cmp_parameter = \
                 cmp_param_tree.keyword_value("policyType")[0].value.lower()
@@ -99,6 +104,8 @@ class CMP(cli_cmds.ConvertConfig):
         advanced policy which will be equivalent to classic built-in policy.
         cmp_policy_tree - set cmp policy command parse tree
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         advanced_builtin_policy = {
             "ns_adv_cmp_content_type": {
                                 "classic": "ns_cmp_content_type",
@@ -176,6 +183,15 @@ class CMP(cli_cmds.ConvertConfig):
         add cmp policy <name> -rule <advanced_rule>
         -resAction <string>
         """
+        if cli_cmds.no_conversion_collect_data:
+            rule_node = cmp_policy_tree.keyword_value('rule')
+            expr_value = rule_node[0].value
+            cmp_policy_tree = CMP.convert_keyword_expr(cmp_policy_tree, 'rule')
+            if cmp_policy_tree.upgraded:
+                expr_list = cli_cmds.get_classic_expr_list(expr_value)
+                for expr_info in expr_list:
+                    cli_cmds.classic_named_expr_in_use.append(expr_info[0].lower())
+            return []
         policy_name = cmp_policy_tree.positional_value(0).value
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
         common.pols_binds.store_policy(pol_obj)
@@ -196,6 +212,8 @@ class CMP(cli_cmds.ConvertConfig):
         2. Add -type RES_DEFAULT keyword.
         3. Throw error when functionality may change.
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         # Comment the bind command and throw warning when
         # state is disabled.
         if bind_cmd_tree.keyword_exists("state") and \
@@ -224,6 +242,10 @@ class CMP(cli_cmds.ConvertConfig):
                 (policy_info[1] == next_prio_expr)):
                     return [bind_cmd_tree]
 
+        if bind_cmd_tree.keyword_exists("type"):
+            type_value = bind_cmd_tree.keyword_value("type")[0].value.upper()
+            if type_value != "RES_DEFAULT":
+                self._only_global_res_default_bindings = False
         self.replace_builtin_policy(bind_cmd_tree, policy_name, 0)
         bind_point = ""
         self.update_bind_info(bind_cmd_tree, bind_point)
@@ -242,6 +264,13 @@ class CMP(cli_cmds.ConvertConfig):
         1. Add -type RESPONSE keyword.
         2. Throw error when functionality may change.
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
+        policy_type = common.pols_binds.policies[policy_name].policy_type
+        if policy_type == "classic" and bind_cmd_tree.group != "lb":
+            self._only_lb_vserver_classic_bindings = False
+        if policy_type == "advanced" and bind_cmd_tree.group != "lb":
+            self._only_lb_vserver_adv_bindings = False
         vserver_name = bind_cmd_tree.positional_value(0).value
         self.replace_builtin_policy(bind_cmd_tree, policy_name, "policyName")
         bind_point = vserver_name
@@ -489,6 +518,149 @@ class CMP(cli_cmds.ConvertConfig):
                 return False
         return True
 
+    def bind_global_classic_policies_to_vserver(self):
+        """
+        Bind the classic policies bound to globale to vserver
+        if the global policy type is advanced
+        """
+        global_bind_point = ""
+        classic_key = "is_classic_policy_bound"
+        tree_key = "bind_parse_trees"
+        global_classic_trees = []
+        global_policies_processed = False
+        for bind_point in self._cmp_bind_info:
+            converted_tree_list = []
+            tree_sorted_with_priority = OrderedDict()
+            # skip for global bind point.
+            if bind_point == "":
+                continue
+            if self._cmp_bind_info[bind_point][classic_key]:
+                for tree in self._cmp_bind_info[bind_point][tree_key]:
+                    if tree.keyword_exists("priority"):
+                        priority = int(tree.keyword_value("priority")[0].value)
+                        tree.remove_keyword("priority")
+                    else:
+                        priority = 0
+                    if priority not in tree_sorted_with_priority:
+                        tree_sorted_with_priority[priority] = []
+                    tree_sorted_with_priority[priority].append(tree)
+                for tree in self._cmp_bind_info[global_bind_point][tree_key]:
+                    add_vserver_bind = False
+                    if tree.keyword_exists("priority"):
+                        priority = int(tree.keyword_value("priority")[0].value)
+                        if tree in self._classic_builtin_bind:
+                            policy_name = self._classic_builtin_bind[tree]
+                            add_vserver_bind = True
+                            if (not global_policies_processed):
+                                global_classic_trees.append(tree)
+                        else:
+                            policy_name = tree.positional_value(0).value
+                            policy_type = common.pols_binds.policies[policy_name].policy_type
+                            if policy_type == "classic":
+                                add_vserver_bind = True
+                                if (not global_policies_processed):
+                                    global_classic_trees.append(tree)
+                    else:
+                        priority = 0
+                        add_vserver_bind = True
+                        policy_name = tree.positional_value(0).value
+                        if (not global_policies_processed):
+                            global_classic_trees.append(tree)
+                    if add_vserver_bind and (priority not in tree_sorted_with_priority):
+                        tree_sorted_with_priority[priority] = []
+                    if add_vserver_bind:
+                        new_vserver_bind = nspepi_parse_tree.CLICommand("bind", "lb", "vserver")
+                        vs_name = nspepi_parse_tree.CLIPositionalParameter(bind_point)
+                        new_vserver_bind.add_positional(vs_name)
+                        policy_node = nspepi_parse_tree.CLIKeywordParameter(nspepi_parse_tree.CLIKeywordName("policyName"))
+                        policy_node.add_value(policy_name)
+                        new_vserver_bind.add_keyword(policy_node)
+                        tree_sorted_with_priority[priority].append(new_vserver_bind)
+
+                global_policies_processed = True
+                final_vserver_bind_trees = []
+                bound_policy_list = []
+                for priority in tree_sorted_with_priority:
+                    for tree in tree_sorted_with_priority[priority]:
+                        policy_name = tree.keyword_value("policyName")[0].value.lower()
+                        if policy_name not in bound_policy_list:
+                            bound_policy_list.append(policy_name)
+                            final_vserver_bind_trees.append(tree)
+                self._cmp_bind_info[bind_point][tree_key] = final_vserver_bind_trees
+
+        self._cmp_bind_info[global_bind_point][tree_key] = []
+
+    def bind_global_advanced_policies_to_vserver(self):
+        """
+        Bind the advanced policies bound to globale to vserver
+        if the global policy type is classic
+        """
+        global_bind_point = ""
+        tree_key = "bind_parse_trees"
+        global_classic_trees = []
+        for bind_point in self._cmp_bind_info:
+            converted_tree_list = []
+            bound_policy_name_list = []
+            # skip for global bind point.
+            if bind_point == "":
+                continue
+            if self._cmp_bind_info[bind_point]["is_advanced_policy_bound"]:
+                priority = 0
+                for tree in self._cmp_bind_info[bind_point][tree_key]:
+                    converted_tree_list.append(tree)
+                    type_value = tree.keyword_value("priority")[0].value.upper()
+                    if type_value == "RESPONSE":
+                        policy_name = tree.keyword_value("policyName")[0].value.lower()
+                        bound_policy_name_list.append(policy_name)
+                        priority = int(tree.keyword_value("priority")[0].value)
+                    else:
+                        continue
+
+                for tree in self._cmp_bind_info[global_bind_point][tree_key]:
+                    add_vserver_bind = False
+                    if tree.keyword_exists("type"):
+                        policy_name = tree.positional_value(0).value.lower()
+                        if policy_name not in converted_tree_list:
+                            add_vserver_bind = True
+                        else:
+                            continue
+                    else:
+                        continue
+
+                    if add_vserver_bind:
+                        priority += 100
+                        new_vserver_bind = nspepi_parse_tree.CLICommand("bind", "lb", "vserver")
+                        vs_name = nspepi_parse_tree.CLIPositionalParameter(bind_point)
+                        new_vserver_bind.add_positional(vs_name)
+                        policy_node = nspepi_parse_tree.CLIKeywordParameter(nspepi_parse_tree.CLIKeywordName("policyName"))
+                        policy_node.add_value(policy_name)
+                        new_vserver_bind.add_keyword(policy_node)
+
+                        priority_node = nspepi_parse_tree.CLIKeywordParameter(nspepi_parse_tree.CLIKeywordName("priority"))
+                        priority_node.add_value(str(priority))
+                        new_vserver_bind.add_keyword(priority_node)
+
+                        goto_node = nspepi_parse_tree.CLIKeywordParameter(nspepi_parse_tree.CLIKeywordName("gotoPriorityExpression"))
+                        if tree.keyword_exists("gotoPriorityExpression"):
+                            goto_value = tree.keyword_value("gotoPriorityExpression")[0].value
+                        else:
+                            goto_value = "END"
+                        goto_node.add_value(goto_value)
+                        new_vserver_bind.add_keyword(goto_node)
+
+                        type_node = nspepi_parse_tree.CLIKeywordParameter(nspepi_parse_tree.CLIKeywordName("type"))
+                        type_node.add_value("RESPONSE")
+                        new_vserver_bind.add_keyword(type_node)
+
+                        if tree.keyword_exists("invoke"):
+                            invoke_node = nspepi_parse_tree.CLIKeywordParameter(nspepi_parse_tree.CLIKeywordName("invoke"))
+                            invoke_node.add_value_list(tee.keyword_value("invoke"))
+                            new_vserver_bind.add_keyword(invoke_node)
+                        converted_tree_list.append(new_vserver_bind)
+
+                self._cmp_bind_info[bind_point][tree_key] = converted_tree_list
+        self._cmp_bind_info[global_bind_point][tree_key] = []
+
     @common.register_for_final_call
     def get_cmp_policy_bindings(self):
         """
@@ -525,9 +697,19 @@ class CMP(cli_cmds.ConvertConfig):
                 # that policy type.
                 tree_list += self.resolve_cmp_param_global_binding()
             else:
-                # If policy type is not same then
-                # check for the funtionality change.
-                conflict_exists = self.check_functionality()
+                if (self._only_lb_vserver_classic_bindings and 
+                        (self._initial_cmp_parameter == "advanced") and
+                        (not self._cmp_bind_info[""]["is_advanced_policy_bound"])):
+                    self.bind_global_classic_policies_to_vserver()
+                elif (self._only_lb_vserver_adv_bindings and 
+                        (self._initial_cmp_parameter == "classic") and
+                        (self._only_global_res_default_bindings) and
+                        (not self._cmp_bind_info[""]["is_classic_policy_bound"])):
+                    self.bind_global_advanced_policies_to_vserver()
+                else:
+                    # If policy type is not same then
+                    # check for the funtionality change.
+                    conflict_exists = self.check_functionality()
 
         # If functionality will change, return bind commands
         # without modifying priority and goto of bind commands.

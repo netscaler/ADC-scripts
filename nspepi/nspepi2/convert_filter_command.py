@@ -214,6 +214,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
     Converts classic filter feature except htmlInjection and FORWARD type
     """
     flow_type_direction_default = None
+    req_action_list = []
+    res_action_list = []
 
     def __init__(self):
         """
@@ -279,6 +281,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
              html_page - HTML page when action type is ERRORCODE
              content_length - indicates Content-Length
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         original_cmd = copy.deepcopy(action_parse_tree)
         # Initialize tree to empty list.
         action_parse_tree_list = []
@@ -429,34 +433,45 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                 """
                 Transformation for filter action of ERRORCODE as actionType.
                 This transforms filter action to advanced command of
-                both rewrite and responder feature. Later one of transformed
-                command which is not used by policy should be removed during
-                cleanup process
+                both rewrite or/and responder features
                 KEY-POINTS:
                   single input will be converted to 2 actions, one will have
                   nspepi_adv_ prefixed to name under rewrite module and
                   second will have its original name under responder module
                 """
-                # Save action name in a list which is used to
-                # identify an action command
-                if lower_actionName not in self._action_command:
-                    self._action_command[lower_actionName] = []
+                req_side_needed = False
+                res_side_needed = False
+                req_side_name = actionName
+                res_side_name = actionName
+                if lower_actionName in CLITransformFilter.req_action_list and \
+                        lower_actionName in CLITransformFilter.res_action_list:
+                    req_side_needed = True
+                    res_side_needed = True
+                    req_side_name = actionName
+                    res_side_name = "nspepi_adv_" + actionName
+                elif lower_actionName in CLITransformFilter.req_action_list:
+                    req_side_needed = True
+                elif lower_actionName in CLITransformFilter.res_action_list:
+                    res_side_needed = True
+                else:
+                    req_side_needed = True
                 # A. Parse tree for advance command with responder feature
-                responder_action = CLICommand("add", "responder", "action")
-                action_name = CLIPositionalParameter(actionName)
-                action_type_adv = CLIPositionalParameter("respondwith")
-                responder_action.add_positional_list([
-                    action_name, action_type_adv])
-                responder_action.set_upgraded()
+                if req_side_needed:
+                    responder_action = CLICommand("add", "responder", "action")
+                    action_name = CLIPositionalParameter(req_side_name)
+                    action_type_adv = CLIPositionalParameter("respondwith")
+                    responder_action.add_positional_list([
+                        action_name, action_type_adv])
+                    responder_action.set_upgraded()
 
                 # B. Parse tree for advanced command with rewrite feature
-                rewrite_action = CLICommand("add", "rewrite", "action")
-                action_name = CLIPositionalParameter(
-                    "nspepi_adv_"+original_cmd.positional_value(0).value)
-                action_type_adv = CLIPositionalParameter("replace_http_res")
-                rewrite_action.add_positional_list([
-                    action_name, action_type_adv])
-                rewrite_action.set_upgraded()
+                if res_side_needed:
+                    rewrite_action = CLICommand("add", "rewrite", "action")
+                    action_name = CLIPositionalParameter(res_side_name)
+                    action_type_adv = CLIPositionalParameter("replace_http_res")
+                    rewrite_action.add_positional_list([
+                        action_name, action_type_adv])
+                    rewrite_action.set_upgraded()
 
                 # C. Assignment - common to both rewrite and responder
                 status_code = original_cmd.positional_value(2).value
@@ -515,28 +530,27 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                     + '\r\nConnection: close\r\nContent-Length: '\
                     + str(content_length) + '\r\n\r\n'\
                     + html_page
-                target_value = 'HTTP.REQ.VERSION.APPEND(' \
-                    + responder_action.normalize(html_text) \
-                    + ')'
+                if req_side_needed:
+                    target_value = 'HTTP.REQ.VERSION.APPEND(' \
+                        + responder_action.normalize(html_text) \
+                        + ')'
+                else:
+                    target_value = 'HTTP.REQ.VERSION.APPEND(' \
+                        + rewrite_action.normalize(html_text) \
+                        + ')'
 
-                # A.1. Transformation to Responder feature
                 target = CLIPositionalParameter(target_value)
-                responder_action.add_positional(target)
-                responder_action.set_upgraded()
+                # A.1. Transformation to Responder feature
+                if req_side_needed:
+                    responder_action.add_positional(target)
+                    responder_action.set_upgraded()
+                    action_parse_tree_list.append(responder_action)
 
                 # B.1. Transformation to rewrite feature
-                rewrite_action.add_positional(target)
-                rewrite_action.set_upgraded()
-
-                # Store actionName, and converted command
-                self._action_command[lower_actionName].append(responder_action)
-                self._action_command[lower_actionName].append(rewrite_action)
-
-
-                # Store actionType and actionName
-                self._actionTypeName[action_type].append(str(
-                    rewrite_action.positional_value(0).value.lower()))
-                return []
+                if res_side_needed:
+                    rewrite_action.add_positional(target)
+                    rewrite_action.set_upgraded()
+                    action_parse_tree_list.append(rewrite_action)
             elif (action_type == "drop") or (action_type == "reset"):
                 """ Transformation for classicAction DROP/RESET actionType
                 The action command should be removed and its actionType should
@@ -592,6 +606,23 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
            action_tree - stored action command at respective index in
                  _action_command
         """
+        if cli_cmds.no_conversion_collect_data:
+            rule_node = policy_parse_tree.keyword_value('rule')
+            expr_value = rule_node[0].value
+            policy_parse_tree = CLITransformFilter.convert_keyword_expr(policy_parse_tree, 'rule')
+            if policy_parse_tree.upgraded:
+                expr_list = cli_cmds.get_classic_expr_list(expr_value)
+                for expr_info in expr_list:
+                    cli_cmds.classic_named_expr_in_use.append(expr_info[0].lower())
+            if policy_parse_tree.keyword_exists("reqAction"):
+                policy_action = policy_parse_tree.keyword_value(
+                    "reqAction")[0].value.lower()
+                CLITransformFilter.req_action_list.append(policy_action)
+            else:
+                policy_action = policy_parse_tree.keyword_value(
+                    "resAction")[0].value.lower()
+                CLITransformFilter.res_action_list.append(policy_action)
+            return []
         cli_cmds.filter_policy_exists = True
         original_cmd = copy.deepcopy(policy_parse_tree)
         policyName = policy_parse_tree.positional_value(0).value
@@ -627,6 +658,15 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
             dictionary through action convertion """
             if policy_action not in dict_value:
                 continue
+            elif (dict_key == "errorcode"):
+                converted_action_name = policy_action
+                if policy_action in CLITransformFilter.req_action_list and \
+                        policy_action in CLITransformFilter.res_action_list:
+                    if (policy_action_key == "resAction"):
+                        converted_action_name = "nspepi_adv_" + policy_action
+                converted_pol_cmd.positional_value(2).set_value(converted_action_name)
+                if (policy_action_key == "reqAction"):
+                    converted_pol_cmd.group = "responder"
             elif ("nspepi_adv_" + policy_action in dict_value):
                 """
                 If input policy calls the action which
@@ -730,6 +770,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
             advanced (for FORWARD and htmlInjection type) then return input
         Add -type explicitly
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         policy_type = common.pols_binds.policies[policy_name].policy_type
         if policy_type == "advanced":
             # Return same if policy_type is marked advanced
@@ -784,6 +826,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         4. Add <goto priority> as NEXT for rewrite policy bindings and
            Add -gotoPriorityExpression as END for responder policy bindings
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         orig_tree = copy.deepcopy(bind_parse_tree)
         if bind_parse_tree.keyword_exists("state") and \
                 bind_parse_tree.keyword_value("state")[0].value.lower() == \
@@ -852,6 +896,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
         """
         Handling Filter HTMLInjection command
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         logging.error("Conversion of HTMLInjection feature"
             " related command [{}] is not supported".format(str(commandParseTree).strip()))
         return [commandParseTree]
@@ -912,24 +958,8 @@ class CLITransformFilter(cli_cmds.ConvertConfig):
                  rewrite_class.rw_req_vserver_goto_exists)) or
                  ((not request_side_binding) and (rewrite_class.rw_res_global_goto_exists or
                  rewrite_class.rw_res_vserver_goto_exists))):
-                add_action_type = self.policy_has_add_action_type(policy_name)
-                if add_action_type:
-                    if rw.ot == "vserver":
-                        policy_label_name = self.get_policy_label_name(vs_name, request_side_binding)
-                        if policy_label_name not in self._policylabel_name:
-                            pl_tree = self.create_policy_label(policy_label_name, request_side_binding)
-                            converted_list.append(pl_tree)
-                            pol_tree = self.add_policy_invoke_policylabel(policy_label_name,
-                                                                          vs_name, rw.group,
-                                                                          request_side_binding)
-                            converted_list.append(pol_tree)
-                        pl_bind_tree = self.bind_to_policy_label(policy_label_name, policy_name)
-                        converted_list.append(pl_bind_tree)
-                    else:
-                        self.modify_global_binding(rw, request_side_binding)
-                else:
-                    bind_cmd = self.return_bind_cmd_error(rw)
-                    converted_list.append(bind_cmd)
+                bind_cmd = self.return_bind_cmd_error(rw)
+                converted_list.append(bind_cmd)
             else:
                 self.complete_convert_bind_cmd(
                     rw, policy_name, module, priority_arg,

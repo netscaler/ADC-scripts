@@ -231,6 +231,14 @@ class CacheRedirection(CheckConfig):
         "bypass-cookie"
     ]
 
+    built_in_policies_adv = {
+        "bypass-non-get-adv",
+        "bypass-cache-control-adv",
+        "bypass-dynamic-url-adv",
+        "bypass-urltokens-adv",
+        "bypass-cookie-adv"
+    }
+
 
     @common.register_for_cmd("add", "cr", "policy")
     def check_policy(self, commandParseTree):
@@ -238,7 +246,19 @@ class CacheRedirection(CheckConfig):
         Checks classic CR policy.
         """
         policy_name = commandParseTree.positional_value(0).value
+        lower_policy_name = policy_name.lower()
+
+        #Ignore default classic policies
+        if lower_policy_name in self.built_in_policies:
+            return []
+
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
+
+        #Ignore default advanced policies
+        if lower_policy_name in self.built_in_policies_adv:
+            pol_obj.policy_type = "advanced"
+            return []
+
         common.pols_binds.store_policy(pol_obj)
         """
         If action field is not set, then it is classic policy,
@@ -443,6 +463,91 @@ class NamedExpression(CheckConfig):
         "ns_msie"
     }
 
+    # List of the builtin named expressions
+    built_in_named_expr_list = [
+            "is_vpn_url",
+            "is_aoservice",
+            "ns_non_get",
+            "ns_non_get_adv",
+            "ns_cachecontrol_nostore",
+            "ns_cachecontrol_nostore_adv",
+            "ns_cachecontrol_nocache",
+            "ns_cachecontrol_nocache_adv",
+            "ns_header_pragma",
+            "ns_header_pragma_adv",
+            "ns_header_cookie",
+            "ns_header_cookie_adv",
+            "ns_ext_cgi",
+            "ns_ext_cgi_adv",
+            "ns_ext_asp",
+            "ns_ext_asp_adv",
+            "ns_ext_exe",
+            "ns_ext_exe_adv",
+            "ns_ext_cfm",
+            "ns_ext_cfm_adv",
+            "ns_ext_ex",
+            "ns_ext_ex_adv",
+            "ns_ext_shtml",
+            "ns_ext_shtml_adv",
+            "ns_ext_htx",
+            "ns_ext_htx_adv",
+            "ns_url_path_cgibin",
+            "ns_url_path_cgibin_adv",
+            "ns_url_path_exec",
+            "ns_url_path_exec_adv",
+            "ns_url_path_bin",
+            "ns_url_path_bin_adv",
+            "ns_url_tokens",
+            "ns_url_tokens_adv",
+            "ns_ext_not_gif",
+            "ns_ext_not_gif_adv",
+            "ns_ext_not_jpeg",
+            "ns_ext_not_jpeg_adv",
+            "ns_cmpclient",
+            "ns_cmpclient_adv",
+            "ns_slowclient",
+            "ns_slowclient_adv",
+            "ns_farclient",
+            "ns_content_type"
+            "ns_msword",
+            "ns_msexcel",
+            "ns_msppt",
+            "ns_css",
+            "ns_css_adv",
+            "ns_xmldata",
+            "ns_xmldata_adv",
+            "ns_mozilla_47",
+            "ns_mozilla_47_adv",
+            "ns_msie",
+            "ns_msie_adv",
+            "ns_audio",
+            "ns_video",
+            "av_5_Symantec_7_5",
+            "av_5_Symantec_6_0",
+            "av_5_Symantec_10",
+            "av_5_Mcafee",
+            "pf_5_sygate_5_6",
+            "pf_5_zonealarm_6_5",
+            "av_5_sophos_4",
+            "av_5_sophos_5",
+            "av_5_sophos_6",
+            "is_5_norton",
+            "av_5_TrendMicro_11_25",
+            "av_5_McAfeevirusscan_11",
+            "av_5_TrendMicroOfficeScan_7_3",
+            "pf_5_TrendMicroOfficeScan_7_3",
+            "ns_content_type_advanced",
+            "ns_msword_advanced",
+            "ns_msexcel_advanced",
+            "ns_msppt_advanced",
+            "rqd_is_yt_domain",
+            "rqd_is_yt_abr",
+            "rqd_is_yt_otherpd",
+            "rqd_is_yt_pd_1"
+            "ns_videoopt_netflix_abr_ssl",
+            "ns_videoopt_pd_abr_detection",
+    ]
+
     @staticmethod
     def register_built_in_named_exprs():
         """
@@ -508,10 +613,15 @@ class NamedExpression(CheckConfig):
         expr_name = commandParseTree.positional_value(0).value
         expr_rule = commandParseTree.positional_value(1).value
         lower_expr_name = expr_name.lower()
-        named_expr[lower_expr_name] = expr_rule
-        if (((lower_expr_name in reserved_word_list) or
-             (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None) or
-             (lower_expr_name in policy_entities_names))):
+
+        # Ignore the saved builtin expressions
+        if lower_expr_name in NamedExpression.built_in_named_expr_list:
+            return []
+
+        if (lower_expr_name in policy_entities_names):
+            logging.error("Name {} is already in use".format(expr_name))
+
+        if (lower_expr_name in reserved_word_list):
             logging.error(("Expression name {} is invalid for advanced "
                            "expression: names must begin with an ASCII "
                            "alphabetic character or underscore and must "
@@ -525,10 +635,12 @@ class NamedExpression(CheckConfig):
         if commandParseTree.keyword_exists('clientSecurityMessage'):
             NamedExpression.register_classic_entity_name(commandParseTree)
             logging.warning(("Client security expressions are deprecated"
-                " using this command [{}], please use the"
+                " using this command [{}], please use"
                 " the advanced authentication policy command")
                 .format(str(commandParseTree).strip()))
             return []
+
+        named_expr[lower_expr_name] = expr_rule
 
         original_tree = copy.deepcopy(commandParseTree)
         commandParseTree = NamedExpression \
@@ -542,7 +654,7 @@ class NamedExpression(CheckConfig):
             """
             NamedExpression.register_policy_entity_name(commandParseTree)
             NamedExpression.register_classic_entity_name(original_tree)
-            logging.warning(("Classic expression has been deprecated in"
+            logging.warning(("Classic expressions are deprecated in"
                 " command [{}], please use the advanced expression")
                 .format(str(commandParseTree).strip()))
         else:
@@ -825,6 +937,7 @@ class AdvExpression(CheckConfig):
     @common.register_for_cmd("add", "vpn", "sessionPolicy")
     @common.register_for_cmd("add", "vpn", "trafficAction")
     @common.register_for_cmd("add", "vpn", "vserver")
+    @common.register_for_cmd("set", "uiinternal", "EXPRESSION")
     def check_advanced_expr(self, commandParseTree):
         """
         Commands which allows ONLY advanced expressions should be registered for this method.
@@ -880,6 +993,7 @@ class AdvExpression(CheckConfig):
             "add vpn sessionpolicy": [1],
             "add vpn trafficaction": ["userExpression", "passwdExpression"],
             "add vpn vserver": ["Listenpolicy"],
+            "set uiinternal expression": ["rule"],
         }
 
         command = " ".join(commandParseTree.get_command_type()).lower()
@@ -910,7 +1024,7 @@ class Deprecation(CheckConfig):
         rule_expr = commandParseTree.positional_value(1).value
         commandParseTree = Deprecation.check_pos_expr(commandParseTree, 1, False)
         if commandParseTree.invalid:
-            logging.warning(("Classic expression in the rule field has been deprecated"
+            logging.warning(("Classic expression in the rule field is deprecated"
                 " for command [{}], please use the advanced expression")
                 .format(str(commandParseTree).strip()))
         elif is_advanced_removed_expr_present(rule_expr):
@@ -930,20 +1044,10 @@ class Deprecation(CheckConfig):
     @common.register_for_cmd("add", "aaa", "preauthenticationpolicy")
     def check_authentication_commands(self, commandParseTree):
         """
-        Check the Authentication commands which have been deprecated
+        Check the Authentication commands which are deprecated
         """
-        logging.warning(("[{}] command has been deprecated,"
+        logging.warning(("[{}] command is deprecated,"
             " please use the advanced authentication policy command")
-            .format(str(commandParseTree).strip()))
-        return []
-
-    @common.register_for_cmd("add", "ns", "trafficDomain")
-    def check_ns_traffic_domain(self, commandParseTree):
-        """
-        Check the traffic domain command
-        """
-        logging.warning(("[{}] command has been deprecated,"
-            " please use the admin partition feature")
             .format(str(commandParseTree).strip()))
         return []
 
@@ -956,7 +1060,7 @@ class Deprecation(CheckConfig):
         if commandParseTree.keyword_exists('rule'):
             logging.warning(("Client security expressions are deprecated"
                 " using this command [{}], please use the"
-                " the advanced authentication policy command")
+                " advanced authentication policy command")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -969,7 +1073,7 @@ class Deprecation(CheckConfig):
         if commandParseTree.keyword_exists('clientSecurity'):
             logging.warning(("Client security expressions are deprecated"
                 " using this command [{}], please use the"
-                " the advanced authentication policy command")
+                " advanced authentication policy command")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -981,7 +1085,7 @@ class Deprecation(CheckConfig):
         if commandParseTree.keyword_exists('ssotype'):
             sso_type = commandParseTree.keyword_value("ssotype")[0].value.lower()
             if sso_type == "selfauth":
-                logging.warning("Selfauth type has been deprecated"
+                logging.warning("Selfauth type is deprecated"
                     " in command [{}]".format(str(commandParseTree).strip()))
         return []
 
@@ -996,7 +1100,7 @@ class Deprecation(CheckConfig):
             if base_theme == "Default" or base_theme == "X1" \
                 or base_theme == "Greenbubble":
                     logging.warning(("Default, GreenBubble and X1 themes"
-                        " have been deprecated in command [{}],"
+                        " are deprecated in command [{}],"
                         " please use RfWebUI theme or RfWebUI based custom theme")
                         .format(str(commandParseTree).strip()))
         return []
@@ -1013,7 +1117,7 @@ class Deprecation(CheckConfig):
             if base_theme == "Default" or base_theme == "X1" \
                 or base_theme == "Greenbubble":
                     logging.warning(("Default, GreenBubble and X1 themes"
-                        " have been deprecated in command [{}],"
+                        " are deprecated in command [{}],"
                         " please use RfWebUI theme or RfWebUI based custom theme")
                         .format(str(commandParseTree).strip()))
         return []
@@ -1049,7 +1153,7 @@ class Deprecation(CheckConfig):
             feature_name = feature_node.value
             if feature_name in features_to_remove:
                 logging.warning("SC, PQ, HDOSP, and CF features"
-                    " have been deprecated in command [{}], please"
+                    " are deprecated in command [{}], please"
                     " use the APPQOE, REWRITE, and RESPONDER features"
                     .format(str(commandParseTree).strip()))
                 break
@@ -1070,7 +1174,7 @@ class Deprecation(CheckConfig):
                 commandParseTree.set_invalid()
                 return [commandParseTree]
 
-        logging.warning(("[{}] command has been deprecated")
+        logging.warning(("[{}] command is deprecated")
             .format(str(commandParseTree).strip()))
         return []
 
@@ -1093,10 +1197,10 @@ class Deprecation(CheckConfig):
     @common.register_for_cmd("set", "lsn", "parameter")
     def check_lsn_commands(self, commandParseTree):
         """
-        Check the Authentication commands which have been deprecated
+        Check the Authentication commands which are deprecated
         """
         if (int(build_version.split(".")[0]) > 13):
-            logging.warning(("[{}] command has been deprecated")
+            logging.warning(("[{}] command is deprecated")
                 .format(str(commandParseTree).strip()))
         return []
 
@@ -1119,6 +1223,25 @@ class Responder(CheckConfig):
             return [commandParseTree]
         action_type = commandParseTree.positional_value(1).value.lower()
         if action_type is "noop":
-            logging.warning("NOOP action type has been deprecated"
+            logging.warning("NOOP action type is deprecated"
                 " for command [{}]".format(str(commandParseTree).strip()))
+        return []
+
+
+@common.register_class_methods
+class NSFeatures(CheckConfig):
+    """ Handles enable ns feature command """
+
+    @common.register_for_cmd("enable", "ns", "feature")
+    def check_ns_feature(self, commandParseTree):
+        """
+        Throw error for SC, PQ and HDOSP features
+        """
+        features_to_check = ["SC", "PQ", "HDOSP", "CF"]
+        num_of_enabled_features = commandParseTree.get_number_of_params()
+        for inx in range(num_of_enabled_features):
+            feature_node = commandParseTree.positional_value(inx)
+            feature_name = feature_node.value
+            if feature_name in features_to_check:
+                return [commandParseTree]
         return []

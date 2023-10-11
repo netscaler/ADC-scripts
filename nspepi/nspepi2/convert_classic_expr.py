@@ -99,28 +99,34 @@ def convert_adv_expr(advanced_expr):
     expression should be replaced.
     Returns None in case of any Error. Otherwise returns converted expression.
     """
-    body_expr_without_arg = is_body_expr_without_arg_present(advanced_expr)
-    if body_expr_without_arg:
-        logging.error("Body size needs to process is not present "
-            "in HTTP.REQ.BODY expression, please privoide the body size.")
-        return None
+    if cli_commands.no_conversion_collect_data:
+        return convert_sys_eval_classic_expr(advanced_expr)
+    advanced_expr = convert_body_expr_without_arg_present(advanced_expr)
     advanced_expr = convert_q_s_expr(advanced_expr)
     return convert_sys_eval_classic_expr(advanced_expr)
 
-def is_body_expr_without_arg_present(advanced_expr):
+def convert_body_expr_without_arg_present(advanced_expr):
     """
-    Checks that if the advanced expression contains
+    Convert the advanced expression contains
     HTTP.REQ.BODY expression without argument
     """
-    body_expr = re.compile(r'\bHTTP\s*\.\s*REQ\s*\.\s*BODY\b\s*', re.IGNORECASE)
+    body_expr_list = []
+    body_expr = re.compile(r'\bHTTP\s*\.\s*REQ\s*\.\s*BODY', re.IGNORECASE)
     expr_len = len(advanced_expr)
     for match in re.finditer(body_expr, advanced_expr):
         start_index = match.start()
         length = match.end() - match.start()
         if (((start_index + length) >= expr_len) or
              (advanced_expr[start_index + length] != '(')):
-            return True
-    return False
+            offset = start_index + length
+            body_expr_list.append(offset)
+
+    converted_expr = "(0)"
+    for expr_index in reversed(body_expr_list):
+       advanced_expr = (advanced_expr[0: expr_index] +
+                        converted_expr +
+                        advanced_expr[expr_index:])
+    return advanced_expr
 
 def convert_q_s_expr(advanced_expr):
    """
@@ -187,6 +193,10 @@ def convert_sys_eval_classic_expr(advanced_expr):
             logging.error("Error in converting expression: {}".format(
                 original_expr))
             return None
+        if cli_commands.no_conversion_collect_data:
+            expr_list = cli_commands.get_classic_expr_list(classic_expr)
+            for expr_info in expr_list:
+                cli_commands.classic_named_expr_in_use.append(expr_info[0].lower())
         converted_expr = convert_classic_expr(classic_expr)
         if converted_expr is not None:
             # Result from convert_classic_expr will have enclosing quotes.

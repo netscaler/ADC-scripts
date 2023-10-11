@@ -89,9 +89,22 @@ class LB(cli_cmds.ConvertConfig):
            2. "req.http.header hdr1 contents && req.vlanid == 3
                         || req.http.header hdr2 contents"
         """
+        if cli_cmds.no_conversion_collect_data:
+            if not add_lbvserver_parse_tree.keyword_exists("rule"):
+                return []
+            rule_node = add_lbvserver_parse_tree.keyword_value('rule')
+            expr_value = rule_node[0].value
+            add_lbvserver_parse_tree = LB.convert_keyword_expr(add_lbvserver_parse_tree, "rule")
+            if add_lbvserver_parse_tree.upgraded:
+                expr_list = cli_cmds.get_classic_expr_list(expr_value)
+                for expr_info in expr_list:
+                    cli_cmds.classic_named_expr_in_use.append(expr_info[0].lower())
+            return []
         lb_protocol = add_lbvserver_parse_tree.positional_value(1).value
         lbv_name = add_lbvserver_parse_tree.positional_value(0).value.lower()
         cli_cmds.vserver_protocol_dict[lbv_name] = lb_protocol.upper()
+        if cli_cmds.vserver_protocol_dict[lbv_name] == "SSL":
+            cli_cmds.lb_ssl_vserver.append(lbv_name)
         add_lbvserver_parse_tree = LB.convert_adv_expr_list(
                                        add_lbvserver_parse_tree, ["Listenpolicy", "resRule", "pushLabel"])
         if not add_lbvserver_parse_tree.keyword_exists("rule"):
@@ -184,10 +197,10 @@ class LB(cli_cmds.ConvertConfig):
         index - CONTENT expression index in _search_patterns list.
         found_expr_list - List of the classic named expressions found in the expression.
         """
-        expr_list = cli_cmds.get_classic_expr_list(rule)
         if self._search_patterns[index].search(rule):
             return True
         else:
+            expr_list = cli_cmds.get_classic_expr_list(rule)
             for expr in expr_list:
                 lower_expr_name = expr[0].lower()
                 if (lower_expr_name not in found_expr_list):
@@ -230,6 +243,8 @@ class LB(cli_cmds.ConvertConfig):
         Handles lb vserver bind command.
         bind lb vserver <name> -policyName <string>
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         if not bind_parse_tree.keyword_exists('policyName'):
             return [bind_parse_tree]
 

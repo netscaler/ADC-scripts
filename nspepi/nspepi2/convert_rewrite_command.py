@@ -48,6 +48,9 @@ class Rewrite(cli_cmds.ConvertConfig):
 
     @common.register_for_cmd("add", "rewrite", "action")
     def convert_rewrite_action(self, tree):
+        if cli_cmds.no_conversion_collect_data:
+            tree = Rewrite.convert_adv_expr_list(tree, [2, 3, "refineSearch"])
+            return []
         if tree.keyword_exists('pattern'):
             pattern_value = tree.keyword_value('pattern')[0].value
             tree.remove_keyword('pattern')
@@ -72,6 +75,9 @@ class Rewrite(cli_cmds.ConvertConfig):
         Saved policy name in policy_list.
         add rewrite policy <name> <rule> <action>
         """
+        if cli_cmds.no_conversion_collect_data:
+            tree = Rewrite.convert_adv_expr_list(tree, [1])
+            return []
         policy_name = tree.positional_value(0).value
         pol_obj = common.Policy(policy_name, self.__class__.__name__,
                                 "advanced")
@@ -89,6 +95,8 @@ class Rewrite(cli_cmds.ConvertConfig):
             HTTP/SSL vservers
         tree - bind command parse tree
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         # If no filter policy is configured, then no need to process
         # rewrite bindings
         if not cli_cmds.filter_policy_exists:
@@ -129,6 +137,8 @@ class Rewrite(cli_cmds.ConvertConfig):
         2. vserver_protocol_dict - dict from cli_cmds and convert_lb_cmd
               packages which carries protocol as value to the key - vserver name
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         # If no filter policy is configured, then no need to process
         # rewrite bindings
         if not cli_cmds.filter_policy_exists:
@@ -156,4 +166,3 @@ class Rewrite(cli_cmds.ConvertConfig):
                 module, priority_arg, goto_arg)
             return []
         return [bind_parse_tree]
-
