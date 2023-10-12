@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -472,3 +472,16 @@ class Authentication(cli_cmds.ConvertConfig):
                 else:
                     tree_list.append(tree)
         return tree_list
+
+    @common.register_for_cmd("add", "authentication", "vserver")
+    def convert_add_auth_vserver(self, add_vserver_parse_tree):
+        """
+        Handles add authentication vserver
+        """
+        if cli_cmds.no_conversion_collect_data:
+            return []
+        protocol_type = add_vserver_parse_tree.positional_value(1).value
+        vs_name = add_vserver_parse_tree.positional_value(0).value.lower()
+        if protocol_type.upper() == "SSL":
+            cli_cmds.authentication_ssl_vserver.append(vs_name)
+        return [add_vserver_parse_tree]

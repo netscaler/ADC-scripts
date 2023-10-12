@@ -19,6 +19,12 @@ from nspepi_parse_tree import *
 def convert_cli_init():
     """Initialize global variables uses by this module"""
     global vserver_protocol_dict
+    global vpn_ssl_vserver
+    global cs_ssl_vserver
+    global cr_ssl_vserver
+    global authentication_ssl_vserver
+    global lb_ssl_vserver
+    global gslb_ssl_vserver
     vserver_protocol_dict = OrderedDict()
     global policy_entities_names
     global classic_entities_names
@@ -34,6 +40,11 @@ def convert_cli_init():
     global cli_group_binds
     global cli_service_binds
     global filter_policy_exists
+    global no_conversion_collect_data
+    global classic_named_expr_in_use
+    global parsing_config_file
+    global named_expr_reference_list
+    global process_expr_referece_list
     cli_global_binds = OrderedDict()
     cli_vserver_binds = OrderedDict()
     cli_user_binds = OrderedDict()
@@ -42,6 +53,23 @@ def convert_cli_init():
     # filter_policy_exists would be true
     # if any filter policy is configured.
     filter_policy_exists = False
+    # no_conversion_collect_data would be true
+    # during the parsing of the config file first
+    # time so that we can collect some data
+    no_conversion_collect_data = True
+    #Stores the name of the named expression
+    # which is being used in the feature from
+    # which classic support is removed
+    classic_named_expr_in_use = []
+    parsing_config_file = False
+    named_expr_reference_list = OrderedDict()
+    process_expr_referece_list = []
+    lb_ssl_vserver = []
+    cs_ssl_vserver = []
+    cr_ssl_vserver = []
+    vpn_ssl_vserver = []
+    authentication_ssl_vserver = []
+    gslb_ssl_vserver = []
 
 
 def remove_quotes(val):
@@ -89,6 +117,8 @@ def get_classic_expr_list(expr):
     lexer = cli_lex.Lexer()
     lexer.input(expr)
     classic_expr_info_list = []
+    expr_info_list = OrderedDict()
+    index_list = []
     while True:
         next_token = lexer.adv_expr_token()
         if not next_token:
@@ -115,7 +145,71 @@ def get_classic_expr_list(expr):
             start_offset = next_token.lexpos - token_value_len + 1
             expr_info = [token_value, adv_expr_name,
                          start_offset, token_value_len]
+            expr_info_list[start_offset] = expr_info
+            index_list.append(start_offset)
             classic_expr_info_list.append(expr_info)
+
+    if NamedExpression.named_expr_with_invalid_names:
+        and_offset_list = []
+        and_offset_list.append(0)
+        if "&&" in expr:
+            for m in re.compile("&&").finditer(expr):
+                and_offset_list.append(m.start())
+        and_patterns_expr = expr.split("&&")
+        last_offset = -1
+        for and_offset in reversed(and_offset_list):
+            or_offset_list = []
+            skip_and_offset = 0
+            if (and_offset == 0):
+                if (last_offset == -1):
+                    or_text = expr
+                else:
+                    or_text = expr[0: last_offset]
+            else:
+                skip_and_offset = 2
+                if (last_offset == -1):
+                    or_text = expr[and_offset + skip_and_offset:]
+                else:
+                    or_text = expr[and_offset + skip_and_offset: last_offset]
+            or_offset_list.append(0)
+            if "||" in or_text:
+                for m in re.compile("\|\|").finditer(or_text):
+                    or_offset_list.append(m.start())
+            or_last_offset = -1
+            for or_offset in reversed(or_offset_list):
+                skip_or_offset = 0
+                if (or_offset == 0):
+                    if (or_last_offset == -1):
+                        final_expr = or_text
+                    else:
+                        final_expr = or_text[0:or_last_offset]
+                else:
+                    skip_or_offset = 2
+                    if (or_last_offset == -1):
+                        final_expr = or_text[or_offset + skip_or_offset:]
+                    else:
+                        final_expr = or_text[or_offset + skip_or_offset: or_last_offset]
+                final_expr_len = len(final_expr)
+                final_expr = final_expr.lstrip("() ")
+                skip_offset = final_expr_len - len(final_expr)
+                final_expr = final_expr.rstrip("() ")
+                lower_strip_expr = final_expr.lower()
+                if lower_strip_expr in NamedExpression.named_expr_with_invalid_names:
+                    start_offset = and_offset + skip_and_offset + or_offset + skip_or_offset + skip_offset
+                    expr_info = [final_expr, get_advanced_name(final_expr),
+                                    start_offset, len(final_expr)]
+                    expr_info_list[start_offset] = expr_info
+                    index_list.append(start_offset)
+                    classic_expr_info_list.append(expr_info)
+                or_last_offset = or_offset
+            last_offset = and_offset
+
+        new_classic_expr_info_list = []
+        index_list = sorted(index_list)
+        for index in index_list:
+            new_classic_expr_info_list.append(expr_info_list[index])
+
+        classic_expr_info_list = new_classic_expr_info_list
 
     return classic_expr_info_list
 
@@ -567,6 +661,8 @@ class ConvertConfig(object):
         goto_arg - identification of the parameter in the bind command for goto
         position - position to be inserted.
         """
+        if no_conversion_collect_data:
+            return []
         if position not in ("before", "inplace", "after"):
             logging.critical("unexpected insert position value")
             sys.exit()
@@ -623,6 +719,8 @@ class ConvertConfig(object):
         goto_arg - identification of the parameter in the bind command for goto
         position - position to be inserted.
         """
+        if no_conversion_collect_data:
+            return []
         if position not in ("before", "inplace", "after"):
             logging.critical("unexpected insert position value")
             sys.exit()
@@ -807,6 +905,10 @@ class ConvertConfig(object):
                         global_type = (
                             common.pols_binds.get_global_type_for_bind(
                                 bind_info.orig_cmd))
+                        if (module == "ssl" and
+                                bind_info.policy_type == "classic"):
+                            bind_cmd_trees.append(bind_info.parse_tree)
+                            continue
                         if (bind_info.flow_type_direction and global_type and
                                 bind_info.flow_type_direction in
                                 ("REQUEST", "RESPONSE") and
@@ -909,6 +1011,14 @@ class CacheRedirection(ConvertConfig):
         "bypass-cookie": "bypass-cookie-adv"
     }
 
+    built_in_policies_adv = {
+        "bypass-non-get-adv",
+        "bypass-cache-control-adv",
+        "bypass-dynamic-url-adv",
+        "bypass-urltokens-adv",
+        "bypass-cookie-adv"
+    }
+
     @common.register_for_init_call
     def store_builtin_cr_policies(self):
         """
@@ -925,7 +1035,8 @@ class CacheRedirection(ConvertConfig):
         vserver_protocol_dict - dict to store protocol as value to the
                   vserver name as key
         """
-
+        if no_conversion_collect_data:
+            return []
         if commandParseTree.keyword_exists('td'):
             cr_protocol = str(commandParseTree.keyword_value('td')[1])
         else:
@@ -933,6 +1044,8 @@ class CacheRedirection(ConvertConfig):
 
         crv_name = commandParseTree.positional_value(0).value.lower()
         vserver_protocol_dict[crv_name] = cr_protocol.upper()
+        if vserver_protocol_dict[crv_name] == "SSL":
+            cr_ssl_vserver.append(crv_name)
 
         # Remove precedence parameter as it has no effect
         # on advanced expression.
@@ -947,8 +1060,31 @@ class CacheRedirection(ConvertConfig):
         """
         Converts classic cr policy to advanced.
         """
+        if no_conversion_collect_data:
+            if commandParseTree.keyword_exists('action'):
+                return []
+            rule_node = commandParseTree.keyword_value('rule')
+            expr_value = rule_node[0].value
+            commandParseTree = CacheRedirection.convert_keyword_expr(commandParseTree, 'rule')
+            if commandParseTree.upgraded:
+                expr_list = get_classic_expr_list(expr_value)
+                for expr_info in expr_list:
+                    classic_named_expr_in_use.append(expr_info[0].lower())
+            return []
         policy_name = commandParseTree.positional_value(0).value
+        lower_policy_name = policy_name.lower()
+
+        #Ignore default classic policies
+        if lower_policy_name in self.built_in_policies:
+            return []
+
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
+
+        #Ignore default advanced policies
+        if lower_policy_name in self.built_in_policies_adv:
+            pol_obj.policy_type = "advanced"
+            return []
+
         common.pols_binds.store_policy(pol_obj)
         """Action can be set only with advance expression,
         so, only check for Q and S prefixes and sys.eval_classic_expr in
@@ -984,6 +1120,8 @@ class CacheRedirection(ConvertConfig):
         bind cr vserver <name> -policyName <string>
         -priority <positive_integer> -gotoPriorityExpression <expression>
         """
+        if no_conversion_collect_data:
+            return []
         if not bind_parse_tree.keyword_exists('policyName'):
             return [bind_parse_tree]
 
@@ -1073,7 +1211,7 @@ class Authorization(ConvertConfig):
             policy_name, policy_type, priority_arg, goto_arg)
 
 
-@common.register_class_methods
+#@common.register_class_methods
 class TMSession(ConvertConfig):
     """ Handle TM feature """
 
@@ -1174,7 +1312,7 @@ class TMSession(ConvertConfig):
                                         priority_arg, goto_arg)
 
 
-@common.register_class_methods
+#@common.register_class_methods
 class TunnelTraffic(ConvertConfig):
     """ Handle Tunnel Traffic feature """
 
@@ -1335,7 +1473,7 @@ class VPNTraffic(ConvertConfig):
 # for VPNTraffic policies. Since the VPNTraffic policy conversion is disabled
 # for now, disabling the binding conversion as well. Enable this back while enabling
 # VPNTraffic policy conversion.
-#@common.register_class_methods
+@common.register_class_methods
 class VPN(ConvertConfig):
     """
     Handles VPN global and VPN vserver
@@ -1350,6 +1488,20 @@ class VPN(ConvertConfig):
 
     # override
     flow_type_direction_default = None
+
+    @common.register_for_cmd("add", "vpn", "vserver")
+    def convert_vpn_global(self, add_vserver_parse_tree):
+        """
+        Handles VPN vserver command.
+        """
+        if no_conversion_collect_data:
+            return []
+        protocol_type = add_vserver_parse_tree.positional_value(1).value
+        vs_name = add_vserver_parse_tree.positional_value(0).value.lower()
+        if protocol_type.upper() == "SSL":
+            authentication_ssl_vserver.append(vs_name)
+        return [add_vserver_parse_tree]
+
 
     # TODO Create a new class VPNSession, Handle VPN session
     # policy conversion in VPNSession class and handle
@@ -1423,6 +1575,15 @@ class APPFw(ConvertConfig):
         to
         add appfw policy <policy name> <advance rule> <action>
         """
+        if no_conversion_collect_data:
+            expr_value = commandParseTree.positional_value(1).value 
+            commandParseTree = APPFw.convert_pos_expr(commandParseTree, 1)
+            if commandParseTree.upgraded:
+                expr_list = get_classic_expr_list(expr_value)
+                for expr_info in expr_list:
+                    classic_named_expr_in_use.append(expr_info[0].lower())
+            return []
+
         policy_name = commandParseTree.positional_value(0).value
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
         common.pols_binds.store_policy(pol_obj)
@@ -1444,6 +1605,8 @@ class APPFw(ConvertConfig):
             [-state ( ENABLED | DISABLED )]
         """
 
+        if no_conversion_collect_data:
+            return []
         # If no classic AppFw policy is configured, then no need
         # to process the bindings.
         if not self._classic_policy_exists:
@@ -1486,6 +1649,8 @@ class APPFw(ConvertConfig):
                        It will be either positional index or keyword name.
         Returns converted list of parse trees.
         """
+        if no_conversion_collect_data:
+            return []
         # If no classic AppFw policy is configured, then no need
         # to process the bindings.
         if not self._classic_policy_exists:
@@ -1498,7 +1663,7 @@ class APPFw(ConvertConfig):
                                                goto_arg)
 
 
-@common.register_class_methods
+#@common.register_class_methods
 class Syslog(ConvertConfig):
     """ Handle Nslog feature """
 
@@ -1527,7 +1692,7 @@ class Syslog(ConvertConfig):
         return [commandParseTree]
 
 
-@common.register_class_methods
+#@common.register_class_methods
 class Nslog(ConvertConfig):
     """ Handle Nslog feature """
 
@@ -1562,6 +1727,8 @@ class Patset(ConvertConfig):
 
     @common.register_for_cmd("add", "policy", "patset")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         Patset.register_policy_entity_name(commandParseTree)
         return [commandParseTree]
 
@@ -1572,6 +1739,8 @@ class Dataset(ConvertConfig):
 
     @common.register_for_cmd("add", "policy", "dataset")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         Dataset.register_policy_entity_name(commandParseTree)
         return [commandParseTree]
 
@@ -1582,6 +1751,11 @@ class HTTP_CALLOUT(ConvertConfig):
 
     @common.register_for_cmd("add", "policy", "httpCallout")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            commandParseTree = HTTP_CALLOUT.convert_adv_expr_list(
+                            commandParseTree, ["hostExpr", "urlStemExpr", "headers",
+                            "parameters", "bodyExpr", "fullReqExpr", "resultExpr"])
+            return []
         callout_name = commandParseTree.positional_value(0).value
         lower_callout_name = callout_name.lower()
         if (lower_callout_name in classic_entities_names):
@@ -1606,6 +1780,8 @@ class StringMap(ConvertConfig):
 
     @common.register_for_cmd("add", "policy", "stringmap")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         StringMap.register_policy_entity_name(commandParseTree)
         return [commandParseTree]
 
@@ -1616,6 +1792,8 @@ class NSVariable(ConvertConfig):
 
     @common.register_for_cmd("add", "ns", "variable")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         NSVariable.register_policy_entity_name(commandParseTree)
         return [commandParseTree]
 
@@ -1626,6 +1804,8 @@ class EncryptionKey(ConvertConfig):
 
     @common.register_for_cmd("add", "ns", "encryptionKey")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         EncryptionKey.register_policy_entity_name(commandParseTree)
         return [commandParseTree]
 
@@ -1636,6 +1816,8 @@ class HMACKey(ConvertConfig):
 
     @common.register_for_cmd("add", "ns", "hmacKey")
     def register_name(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         HMACKey.register_policy_entity_name(commandParseTree)
         return [commandParseTree]
 
@@ -1645,6 +1827,7 @@ class NamedExpression(ConvertConfig):
     """ Handle Named expression feature """
 
     csec_expr_list = OrderedDict()
+    named_expr_with_invalid_names = []
 
     # Built-in classic named expression names and there
     # corresponding built-in advanced named expression names.
@@ -1680,6 +1863,91 @@ class NamedExpression(ConvertConfig):
         "ns_mozilla_47": "ns_mozilla_47_adv",
         "ns_msie": "ns_msie_adv"
     }
+
+    # List of the builtin named expressions
+    built_in_named_expr_list = [
+            "is_vpn_url",
+            "is_aoservice",
+            "ns_non_get",
+            "ns_non_get_adv",
+            "ns_cachecontrol_nostore",
+            "ns_cachecontrol_nostore_adv",
+            "ns_cachecontrol_nocache",
+            "ns_cachecontrol_nocache_adv",
+            "ns_header_pragma",
+            "ns_header_pragma_adv",
+            "ns_header_cookie",
+            "ns_header_cookie_adv",
+            "ns_ext_cgi",
+            "ns_ext_cgi_adv",
+            "ns_ext_asp",
+            "ns_ext_asp_adv",
+            "ns_ext_exe",
+            "ns_ext_exe_adv",
+            "ns_ext_cfm",
+            "ns_ext_cfm_adv",
+            "ns_ext_ex",
+            "ns_ext_ex_adv",
+            "ns_ext_shtml",
+            "ns_ext_shtml_adv",
+            "ns_ext_htx",
+            "ns_ext_htx_adv",
+            "ns_url_path_cgibin",
+            "ns_url_path_cgibin_adv",
+            "ns_url_path_exec",
+            "ns_url_path_exec_adv",
+            "ns_url_path_bin",
+            "ns_url_path_bin_adv",
+            "ns_url_tokens",
+            "ns_url_tokens_adv",
+            "ns_ext_not_gif",
+            "ns_ext_not_gif_adv",
+            "ns_ext_not_jpeg",
+            "ns_ext_not_jpeg_adv",
+            "ns_cmpclient",
+            "ns_cmpclient_adv",
+            "ns_slowclient",
+            "ns_slowclient_adv",
+            "ns_farclient",
+            "ns_content_type"
+            "ns_msword",
+            "ns_msexcel",
+            "ns_msppt",
+            "ns_css",
+            "ns_css_adv",
+            "ns_xmldata",
+            "ns_xmldata_adv",
+            "ns_mozilla_47",
+            "ns_mozilla_47_adv",
+            "ns_msie",
+            "ns_msie_adv",
+            "ns_audio",
+            "ns_video",
+            "av_5_Symantec_7_5",
+            "av_5_Symantec_6_0",
+            "av_5_Symantec_10",
+            "av_5_Mcafee",
+            "pf_5_sygate_5_6",
+            "pf_5_zonealarm_6_5",
+            "av_5_sophos_4",
+            "av_5_sophos_5",
+            "av_5_sophos_6",
+            "is_5_norton",
+            "av_5_TrendMicro_11_25",
+            "av_5_McAfeevirusscan_11",
+            "av_5_TrendMicroOfficeScan_7_3",
+            "pf_5_TrendMicroOfficeScan_7_3",
+            "ns_content_type_advanced",
+            "ns_msword_advanced",
+            "ns_msexcel_advanced",
+            "ns_msppt_advanced",
+            "rqd_is_yt_domain",
+            "rqd_is_yt_abr",
+            "rqd_is_yt_otherpd",
+            "rqd_is_yt_pd_1"
+            "ns_videoopt_netflix_abr_ssl",
+            "ns_videoopt_pd_abr_detection",
+    ]
 
     @staticmethod
     def register_built_in_named_exprs():
@@ -1743,6 +2011,30 @@ class NamedExpression(ConvertConfig):
         expr_name = commandParseTree.positional_value(0).value
         expr_rule = commandParseTree.positional_value(1).value
         lower_expr_name = expr_name.lower()
+
+        if no_conversion_collect_data:
+            if (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None):
+                NamedExpression.named_expr_with_invalid_names.append(lower_expr_name)
+            commandParseTree = NamedExpression \
+                .convert_pos_expr(commandParseTree, 1, True)
+            if commandParseTree.upgraded:
+                classic_entities_names.add(lower_expr_name)
+                policy_entities_names.add(get_advanced_name(expr_name).lower())
+                expr_list = get_classic_expr_list(expr_rule)
+                if (len(expr_list) != 0):
+                    if lower_expr_name not in named_expr_reference_list:
+                        named_expr_reference_list[lower_expr_name] = []
+
+                for used_expr_name in expr_list:
+                    named_expr_reference_list[lower_expr_name].append(used_expr_name[0].lower())
+                return []
+            else:
+                return []
+
+        # Ignore the saved builtin expressions
+        if lower_expr_name in NamedExpression.built_in_named_expr_list:
+            return []
+
         named_expr[lower_expr_name] = expr_rule
 
         if commandParseTree.keyword_exists('clientSecurityMessage'):
@@ -1760,8 +2052,10 @@ class NamedExpression(ConvertConfig):
             NamedExpression.register_classic_entity_name(commandParseTree)
             return [commandParseTree]
 
-        if ((lower_expr_name in reserved_word_list) or
-            (re.match('^[a-z_][a-z0-9_]*$', lower_expr_name) is None)):
+        if (lower_expr_name in policy_entities_names):
+            logging.error("Name {} is already in use".format(expr_name))
+
+        if (lower_expr_name in reserved_word_list):
             logging.error(("Expression name {} is invalid for advanced "
                            "expression: names must begin with an ASCII "
                            "alphabetic character or underscore and must "
@@ -1771,9 +2065,6 @@ class NamedExpression(ConvertConfig):
                            " underscores will be substituted for any invalid"
                            " characters in corresponding advanced name")
                           .format(expr_name))
-
-        if (lower_expr_name in policy_entities_names):
-            logging.error("Name {} is already in use".format(expr_name))
 
         original_tree = copy.deepcopy(commandParseTree)
         """Convert classic named expression to advanced
@@ -1802,14 +2093,15 @@ class NamedExpression(ConvertConfig):
                 both the old Classic and corresponding Advanced named
                 expressions from this routine.
             """
-            name_node = commandParseTree.positional_value(0)
-            name_node.set_value(get_advanced_name(name_node.value))
-            # Remove the devno so that multiple lines
-            # don't have the same devno.
-            if commandParseTree.keyword_exists('devno'):
-                commandParseTree.remove_keyword('devno')
-            tree_list.append(commandParseTree)
-            NamedExpression.register_policy_entity_name(commandParseTree)
+            if (not parsing_config_file) or (lower_expr_name in classic_named_expr_in_use):
+                name_node = commandParseTree.positional_value(0)
+                name_node.set_value(get_advanced_name(name_node.value))
+                # Remove the devno so that multiple lines
+                # don't have the same devno.
+                if commandParseTree.keyword_exists('devno'):
+                    commandParseTree.remove_keyword('devno')
+                tree_list.append(commandParseTree)
+                NamedExpression.register_policy_entity_name(commandParseTree)
             NamedExpression.register_classic_entity_name(original_tree)
         elif commandParseTree.has_csec_expr:
             NamedExpression.csec_expr_list[lower_expr_name] = {}
@@ -1819,6 +2111,32 @@ class NamedExpression(ConvertConfig):
         else:
             NamedExpression.register_policy_entity_name(original_tree)
         return tree_list
+
+    @staticmethod
+    def add_all_refernce_expr(expr_name):
+        expr_list = []
+        if expr_name in named_expr_reference_list:
+            expr_list.append(expr_name)
+            for expr in named_expr_reference_list[expr_name]:
+                expr_list.append(expr)
+                if expr not in process_expr_referece_list:
+                    for expr1 in NamedExpression.add_all_refernce_expr(expr):
+                        expr_list.append(expr1)
+                    process_expr_referece_list.append(expr)
+        return expr_list
+
+    @staticmethod
+    def add_reference_named_exprs():
+        temp_list = []
+        for expr_name in named_expr_reference_list:
+            temp_list.append(expr_name)
+        for expr_name in temp_list:
+            if expr_name in classic_named_expr_in_use:
+                if expr_name not in process_expr_referece_list:
+                    process_expr_referece_list.append(expr_name)
+                    for expr1 in NamedExpression.add_all_refernce_expr(expr_name):
+                        if expr1 not in classic_named_expr_in_use:
+                            classic_named_expr_in_use.append(expr1)
 
 
 @common.register_class_methods
@@ -1834,6 +2152,8 @@ class HTTPProfile(ConvertConfig):
         to
         add ns httpProfile <profile name> -http2 ENABLED
         """
+        if no_conversion_collect_data:
+            return []
         if commandParseTree.keyword_exists('spdy'):
                 commandParseTree.remove_keyword('spdy')
                 http2_keyword = CLIKeywordParameter(CLIKeywordName("http2"))
@@ -1896,6 +2216,8 @@ class ContentSwitching(ConvertConfig):
                  vserver name as key
         """
 
+        if no_conversion_collect_data:
+            return []
         if commandParseTree.keyword_exists('td'):
             cs_protocol = str(commandParseTree.keyword_value('td')[1])
         else:
@@ -1903,6 +2225,8 @@ class ContentSwitching(ConvertConfig):
 
         csv_name = commandParseTree.positional_value(0).value.lower()
         vserver_protocol_dict[csv_name] = cs_protocol.upper()
+        if vserver_protocol_dict[csv_name] == "SSL":
+            cs_ssl_vserver.append(csv_name)
 
         # Remove caseSensitive parameter as it has no effect
         # on advanced expression.
@@ -1948,6 +2272,16 @@ class ContentSwitching(ConvertConfig):
                && HTTP.REQ.HOSTNAME.EQ("<domain>")>
 
         """
+        if no_conversion_collect_data:
+            if commandParseTree.keyword_exists('rule'):
+                rule_node = commandParseTree.keyword_value('rule')
+                expr_value = rule_node[0].value
+                commandParseTree = ContentSwitching.convert_keyword_expr(commandParseTree, 'rule')
+                if commandParseTree.upgraded:
+                    expr_list = get_classic_expr_list(expr_value)
+                    for expr_info in expr_list:
+                        classic_named_expr_in_use.append(expr_info[0].lower())
+            return []
         policy_name = commandParseTree.positional_value(0).value
         pol_obj = common.Policy(policy_name, self.__class__.__name__)
         common.pols_binds.store_policy(pol_obj)
@@ -1964,6 +2298,15 @@ class ContentSwitching(ConvertConfig):
         is_domain = False
         url_priority = 0
         if commandParseTree.keyword_exists('rule'):
+            if no_conversion_collect_data:
+                rule_node = commandParseTree.keyword_value('rule')
+                expr_value = rule_node[0].value
+                commandParseTree = ContentSwitching.convert_keyword_expr(commandParseTree, 'rule')
+                if commandParseTree.upgraded:
+                    expr_list = get_classic_expr_list(expr_value)
+                    for expr_info in expr_list:
+                        classic_named_expr_in_use.append(expr_info[0].lower())
+                return []
             is_rule = True
             if commandParseTree.keyword_exists('domain'):
                 is_domain = True
@@ -2116,6 +2459,8 @@ class ContentSwitching(ConvertConfig):
         bind cs vserver <name> -policyName <string>
         -priority <integer> [-gotoPriorityExpression <expression>]
         """
+        if no_conversion_collect_data:
+            return []
         if not commandParseTree.keyword_exists('policyName'):
             return [commandParseTree]
 
@@ -2203,6 +2548,8 @@ class ContentSwitching(ConvertConfig):
                        It will be either positional index or keyword name.
         Returns converted list of parse trees.
         """
+        if no_conversion_collect_data:
+            return []
         # If no classic CS policy is configured, then no need
         # to process the bindings.
         if not self._classic_policy_exists:
@@ -2556,6 +2903,8 @@ class AAA(ConvertConfig):
         Returns:
             tree: Processed command parse tree for add aaa group command
         """
+        if no_conversion_collect_data:
+            return []
         groupname = common.get_cmd_arg(0, tree)
         weight = common.get_cmd_arg("weight", tree)
         weight = weight if weight else "0"
@@ -2572,6 +2921,8 @@ class AAA(ConvertConfig):
             [-priority <priority>] [-type <bindType>]
             [-gotoPriorityExpression <expression>] ...
         """
+        if no_conversion_collect_data:
+            return []
         policy_name = common.get_cmd_arg("policy", tree)
         if not policy_name:
             return [tree]
@@ -2593,10 +2944,14 @@ class AAA(ConvertConfig):
 
     @common.register_for_cmd("bind", "aaa", "user")
     def convert_user_bind(self, tree):
+        if no_conversion_collect_data:
+            return []
         return self.user_group_bind_common(tree, "User")
 
     @common.register_for_cmd("bind", "aaa", "group")
     def convert_group_bind(self, tree):
+        if no_conversion_collect_data:
+            return []
         return self.user_group_bind_common(tree, "Group")
 
 @common.register_class_methods
@@ -2655,6 +3010,13 @@ class AdvExpression(ConvertConfig):
     # TODO: This entry need to be removed when Classic VPNTraffic policy
     # conversion is enabled in VPNTraffic class.
     @common.register_for_cmd("add", "vpn", "trafficPolicy")
+    # TODO: This entry need to be removed when Classic tunnelTraffic
+    # policy conversion is enabled in TunnelTraffic class.
+    @common.register_for_cmd("add", "tunnel", "trafficPolicy")
+    # TODO: This entry need to be removed when Classic TM
+    # session policy conversion is enabled in TMSession class.
+    @common.register_for_cmd("add", "tm", "sessionPolicy")
+    @common.register_for_cmd("set", "uiinternal", "EXPRESSION")
     def convert_advanced_expr(self, tree):
         """
         Commands which allows ONLY advanced expressions should be registered for this method.
@@ -2684,7 +3046,6 @@ class AdvExpression(ConvertConfig):
             "add transform policy": [1],
             "add appqoe action": ["dosTrigExpression"],
             "add appqoe policy": ["rule"],
-            "add ssl policy": ["rule"],
             "add appflow policy": [1],
             "add autoscale policy": ["rule"],
             "add authentication policy": ["rule"],
@@ -2719,6 +3080,13 @@ class AdvExpression(ConvertConfig):
             # TODO: This entry need to be removed when Classic VPNTraffic policy
             # conversion is enabled in VPNTraffic class.
             "add vpn trafficpolicy": [1],
+            # TODO: This entry need to be removed when Classic tunnelTraffic
+            # policy conversion is enabled in TunnelTraffic class.
+            "add tunnel trafficpolicy": [1],
+            # TODO: This entry need to be removed when Classic TM
+            # session policy conversion is enabled in TMSession class.
+            "add tm sessionpolicy": [1],
+            "set uiinternal expression": ["rule"],
         }
 
         command = " ".join(tree.get_command_type()).lower()
@@ -2730,20 +3098,500 @@ class AdvExpression(ConvertConfig):
 class SSL(ConvertConfig):
     """ Handle SSL feature """
 
+
+    def __init__(self):
+        self._classic_policy_exists = False
+        self._classic_policy_bound = False
+        self._advanced_policy_bound = False
+        self._bind_info = OrderedDict()
+        self._control_action = ["clientauth", "noclientauth"]
+        self._control_policy = []
+        self._global_override_bindings_exists = False
+
+    @common.register_for_cmd("add", "ssl", "action")
+    def convert_ssl_action(self, action_tree):
+        """
+        Convert classic SSL action.
+        """
+        if no_conversion_collect_data:
+            return []
+        if action_tree.keyword_exists("clientAuth"):
+            action_name = action_tree.positional_value(0).value.lower()
+            self._control_action.append(action_name)
+        return [action_tree]
+
     @common.register_for_cmd("add", "ssl", "policy")
-    def convert_policy(self, commandParseTree):
+    def convert_ssl_policy(self, commandParseTree):
         """
-        Check classic SSL policy.
+        Convert classic SSL policy.
         """
-        original_tree = copy.deepcopy(commandParseTree)
+        if no_conversion_collect_data:
+            rule_node = commandParseTree.keyword_value('rule')
+            expr_value = rule_node[0].value
+            commandParseTree = SSL.convert_keyword_expr(commandParseTree, 'rule')
+            if commandParseTree.upgraded:
+                expr_list = get_classic_expr_list(expr_value)
+                for expr_info in expr_list:
+                    classic_named_expr_in_use.append(expr_info[0].lower())
+            return []
+
+        policy_name = commandParseTree.positional_value(0).value
+        pol_obj = common.Policy(policy_name, self.__class__.__name__)
+        common.pols_binds.store_policy(pol_obj)
         convertedParseTree = SSL.convert_keyword_expr(commandParseTree, 'rule')
-        if convertedParseTree.upgraded:
-            logging.error(("Classic SSL policy [{}] is not working from 10.1 release, "
-                           "please remove the classic SSL policy configuration "
-                           "from the config file").format(str(original_tree).strip()))
-            return [original_tree]
+        if commandParseTree.upgraded:
+            pol_obj.policy_type = "classic"
+            self._classic_policy_exists = True
+        else:
+            pol_obj.policy_type = "advanced"
+
+        action_name = commandParseTree.keyword_value('action')[0].value.lower()
+        if action_name in self._control_action:
+            lower_policy_name = policy_name.lower()
+            self._control_policy.append(lower_policy_name)
+
         return [commandParseTree]
 
+    @common.register_for_cmd("bind", "ssl", "vserver")
+    def convert_ssl_vserver_bindings(self, commandParseTree):
+        """
+        Convert SSL vserver bindings.
+        """
+        if no_conversion_collect_data:
+            return []
+        if not commandParseTree.keyword_exists("policyName"):
+            return [commandParseTree]
+        # If no classic policy exists, then no need to
+        # process bind command
+        if not self._classic_policy_exists:
+            return [commandParseTree]
+
+        if commandParseTree.keyword_exists("type"):
+            key_val = commandParseTree.keyword_value("type")[0].value.upper()
+            if key_val != "REQUEST":
+                # Other bindpoints are supported only with advanced,
+                # so no need to process
+                return [commandParseTree]
+        vs_name = commandParseTree.positional_value(0).value.lower()
+        # Get the policy name
+        policy_name = commandParseTree.keyword_value('policyName')[0].value
+        if vs_name not in self._bind_info:
+            self._bind_info[vs_name] = OrderedDict()
+            self._bind_info[vs_name]["classic"] = []
+            self._bind_info[vs_name]["advanced"] = []
+        policy_type = common.pols_binds.policies[policy_name].policy_type
+        if policy_type == "advanced":
+            self._bind_info[vs_name]["advanced"].append(commandParseTree)
+            self._advanced_policy_bound = True
+        else:
+            self._bind_info[vs_name]["classic"].append(commandParseTree)
+            self._classic_policy_bound = True
+        return []
+
+
+    @common.register_for_cmd("bind", "ssl", "global")
+    def convert_ssl_global_bindings(self, commandParseTree):
+        """
+        Convert SSL vserver bindings.
+        """
+        if no_conversion_collect_data:
+            return []
+        # If no classic policy exists, then no need to
+        # process bind command
+        if not self._classic_policy_exists:
+            return [commandParseTree]
+
+        if commandParseTree.keyword_exists("type"):
+            types_to_check = [
+                    "CONTROL_OVERRIDE",
+                    "CONTROL_DEFAULT",
+                    "DATA_OVERRIDE",
+                    "DATA_DEFAULT",
+            ]
+            type_val = commandParseTree.keyword_value("type")[0].value.upper()
+            if type_val not in types_to_check:
+                return [commandParseTree]
+            if type_val == "CONTROL_OVERRIDE" or \
+                    type_val == "DATA_OVERRIDE":
+                self._global_override_bindings_exists = True
+
+
+        if "" not in self._bind_info:
+            self._bind_info[""] = OrderedDict()
+            self._bind_info[""]["classic"] = []
+            self._bind_info[""]["advanced"] = []
+
+        policy_name = commandParseTree.keyword_value("policyName")[0].value
+        policy_type = common.pols_binds.policies[policy_name].policy_type
+        if policy_type == "advanced":
+            self._bind_info[""]["advanced"].append(commandParseTree)
+            self._advanced_policy_bound = True
+        else:
+            self._bind_info[""]["classic"].append(commandParseTree)
+            self._classic_policy_bound = True
+        return []
+
+    @common.register_for_final_call
+    def get_ssl_policy_bindings(self):
+        tree_list = []
+        module = "SSL"
+        priority_arg = "priority"
+        goto_arg = "gotoPriorityExpression"
+
+        if not self._classic_policy_bound and self._advanced_policy_bound:
+            """
+            Handles the case when only advanced policy
+            is bound to any bindpoint
+            """
+            for bind_point in self._bind_info:
+                for bind_tree in self._bind_info[bind_point]["advanced"]:
+                    tree_list += bind_tree
+            return tree_list
+
+        if not self._advanced_policy_bound and self._classic_policy_bound:
+            """
+            Handles the case when only classic policy
+            is bound to any bindpoint
+            """
+            converted_list = []
+            for bind_point in self._bind_info:
+                priority = 100
+                for bind_tree in self._bind_info[bind_point]["classic"]:
+                    self.bind_default_goto = "NEXT"
+                    if bind_tree.keyword_exists("priority"):
+                        self.update_tree_arg(bind_tree, "priority", str(priority))
+                    else:
+                        keyword_arg = CLIKeywordParameter(CLIKeywordName("priority"))
+                        keyword_arg.add_value(str(priority))
+                        bind_tree.add_keyword(keyword_arg)
+                    policy_name = bind_tree.keyword_value("policyName")[0].value
+                    lower_policy_name = policy_name.lower()
+                    priority += 100
+                    keyword_arg = CLIKeywordParameter(CLIKeywordName("gotoPriorityExpression"))
+                    if lower_policy_name in self._control_policy:
+                        keyword_arg.add_value("END")
+                    else:
+                        keyword_arg.add_value("NEXT")
+                    bind_tree.add_keyword(keyword_arg)
+                    bind_tree.set_upgraded()
+                    if (bind_point == ""):
+                        if lower_policy_name in self._control_policy:
+                            self.update_tree_arg(bind_tree, "type", "CONTROL_DEFAULT")
+                        else:
+                            self.update_tree_arg(bind_tree, "type", "DATA_DEFAULT")
+                        converted_list.append(bind_tree)
+                    else:
+                        converted_list.append(bind_tree)
+            return converted_list
+
+        if self._advanced_policy_bound and self._classic_policy_bound:
+            if self.only_global_bindings_exists():
+                """
+                Handles the case when only global bindings are present
+                """
+                if self.only_global_default_bindings_exists():
+                    control_type = "CONTROL_DEFAULT"
+                    data_type = "DATA_DEFAULT"
+                else:
+                    control_type = "CONTROL_OVERRIDE"
+                    data_type = "DATA_OVERRIDE"
+                for bind_tree in self._bind_info[""]["classic"]:
+                    self.bind_default_goto = "NEXT"
+                    policy_name = bind_tree.keyword_value("policyName")[0].value
+                    if policy_name.lower() in self._control_policy:
+                        self.bind_default_goto = "END"
+                        self.update_tree_arg(bind_tree, "type", control_type)
+                    else:
+                        self.update_tree_arg(bind_tree, "type", data_type)
+                    if bind_tree.keyword_exists("priority"):
+                        bind_tree.remove_keyword("priority")
+                    self.convert_global_bind(bind_tree,
+                                           bind_tree, policy_name,
+                                           module, priority_arg,
+                                           goto_arg, "before")
+                for bind_tree in self._bind_info[""]["advanced"]:
+                    self.bind_default_goto = "END"
+                    policy_name = bind_tree.keyword_value("policyName")[0].value
+                    if bind_tree.keyword_exists("priority"):
+                        bind_tree.remove_keyword("priority")
+                    self.convert_global_bind(bind_tree,
+                                           bind_tree, policy_name,
+                                           module, priority_arg,
+                                           goto_arg)
+                return []
+            elif self.only_lb_vserver_bindings_exists() or self.only_cs_vserver_bindings_exists() or \
+                    self.only_vpn_vserver_bindings_exists() or self.only_cr_vserver_bindings_exists() or \
+                    self.only_authentication_vserver_bindings_exists() or self.only_cr_vserver_bindings_exists():
+                for bind_point in self._bind_info:
+                    no_of_classic_pol_bound = len (self._bind_info[bind_point]["classic"])
+                    self.bind_default_goto = "NEXT"
+                    for bind_tree in self._bind_info[bind_point]["classic"]:
+                        policy_name = bind_tree.keyword_value("policyName")[0].value
+                        if policy_name.lower() in self._control_policy:
+                            self.bind_default_goto = "END"
+                        if bind_tree.keyword_exists("priority"):
+                            bind_tree.remove_keyword("priority")
+                        self.convert_entity_policy_bind(bind_tree,
+                                           bind_tree, policy_name,
+                                           module, priority_arg,
+                                           goto_arg)
+                    self.bind_default_goto = "END"
+                    for bind_tree in self._bind_info[bind_point]["advanced"]:
+                        if no_of_classic_pol_bound == 0:
+                            tree_list.append(bind_tree)
+                        else:
+                            if bind_tree.keyword_exists("priority"):
+                                bind_tree.remove_keyword("priority")
+                            policy_name = bind_tree.keyword_value("policyName")[0].value
+                            self.convert_entity_policy_bind(bind_tree,
+                                               bind_tree, policy_name,
+                                               module, priority_arg,
+                                               goto_arg)
+                return tree_list
+            if self.only_classic_lb_vserver_global_default_bindings_exists() or \
+                    self.only_classic_cs_vserver_global_default_bindings_exists() or \
+                    self.only_classic_cr_vserver_global_default_bindings_exists() or \
+                    self.only_classic_gslb_vserver_global_default_bindings_exists() or \
+                    self.only_classic_vpn_vserver_global_default_bindings_exists() or \
+                    self.only_classic_authentication_vserver_global_default_bindings_exists():
+                """
+                Handles the case when only classic policies are bound to Vserver and
+                global bindings are bound at the default level
+                """
+                for bind_point in self._bind_info:
+                    if bind_point == "":
+                        continue
+                    self.bind_default_goto = "NEXT"
+                    for bind_tree in self._bind_info[bind_point]["classic"]:
+                        policy_name = bind_tree.keyword_value("policyName")[0].value
+                        if policy_name.lower() in self._control_policy:
+                            self.bind_default_goto = "END"
+                        if bind_tree.keyword_exists("priority"):
+                            bind_tree.remove_keyword("priority")
+                        self.convert_entity_policy_bind(bind_tree,
+                                           bind_tree, policy_name,
+                                           module, priority_arg,
+                                           goto_arg)
+                for bind_tree in self._bind_info[""]["classic"]:
+                    self.bind_default_goto = "NEXT"
+                    policy_name = bind_tree.keyword_value("policyName")[0].value
+                    if policy_name.lower() in self._control_policy:
+                        self.bind_default_goto = "END"
+                        self.update_tree_arg(bind_tree, "type", "CONTROL_DEFAULT")
+                    else:
+                        self.update_tree_arg(bind_tree, "type", "DATA_DEFAULT")
+                    if bind_tree.keyword_exists("priority"):
+                        bind_tree.remove_keyword("priority")
+                    self.convert_global_bind(bind_tree,
+                                           bind_tree, policy_name,
+                                           module, priority_arg,
+                                           goto_arg)
+                for bind_tree in self._bind_info[""]["advanced"]:
+                    self.bind_default_goto = "END"
+                    policy_name = bind_tree.keyword_value("policyName")[0].value
+                    if bind_tree.keyword_exists("priority"):
+                        bind_tree.remove_keyword("priority")
+                    self.convert_global_bind(bind_tree,
+                                           bind_tree, policy_name,
+                                           module, priority_arg,
+                                           goto_arg)
+            else:
+                for bind_point in self._bind_info:
+                    for bind_tree in self._bind_info[bind_point]["classic"]:
+                        logging.error(("Conversion is not supported when both classic and"
+                            "advanced SSL policies are bound: [{}]").format(str(bind_tree).strip()))
+                    for bind_tree in self._bind_info[bind_point]["advanced"]:
+                        tree_list.append(bind_tree)
+        return tree_list
+
+    def only_global_bindings_exists(self):
+        """
+        Returns True iff global bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point != "":
+                return False
+        return True
+
+    def only_global_default_bindings_exists(self):
+        """
+        Returns True iff global bindings are present
+        and policies are bound at default bindpoint
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point != "":
+                return False
+        return True
+
+    def only_lb_vserver_bindings_exists(self):
+        """
+        Returns True iff only LB vserver bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "" or bind_point not in lb_ssl_vserver:
+                return False
+        return True
+
+    def only_cs_vserver_bindings_exists(self):
+        """
+        Returns True iff only CS vserver bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "" or bind_point not in cs_ssl_vserver:
+                return False
+        return True
+
+    def only_vpn_vserver_bindings_exists(self):
+        """
+        Returns True iff only VPN vserver bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "" or bind_point not in lb_ssl_vserver:
+                return False
+        return True
+
+    def only_cr_vserver_bindings_exists(self):
+        """
+        Returns True iff only CR vserver bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "" or bind_point not in lb_ssl_vserver:
+                return False
+        return True
+
+    def only_authentication_vserver_bindings_exists(self):
+        """
+        Returns True iff only Authentication vserver bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "" or bind_point not in authentication_ssl_vserver:
+                return False
+        return True
+
+    def only_gslb_vserver_bindings_exists(self):
+        """
+        Returns True iff only GSLB vserver bindings are present
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "" or bind_point not in gslb_ssl_vserver:
+                return False
+        return True
+
+    def only_classic_lb_vserver_global_default_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound at the LB vserver
+        and classic or advanced policies are bound at the global default
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if bind_point not in lb_ssl_vserver:
+                return False
+            if self._bind_info[bind_point]["advanced"]:
+                return False
+        return True
+
+    def only_classic_cs_vserver_global_default_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound at the CS vserver
+        and classic or advanced policies are bound at the global default
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if bind_point not in cs_ssl_vserver:
+                return False
+            if self._bind_info[bind_point]["advanced"]:
+                return False
+        return True
+
+    def only_classic_cr_vserver_global_default_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound at the CR vserver
+        and classic or advanced policies are bound at the global default
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if bind_point not in cs_ssl_vserver:
+                return False
+            if self._bind_info[bind_point]["advanced"]:
+                return False
+        return True
+
+    def only_classic_vpn_vserver_global_default_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound at the VPN vserver
+        and classic or advanced policies are bound at the global default
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if bind_point not in vpn_ssl_vserver:
+                return False
+            if self._bind_info[bind_point]["advanced"]:
+                return False
+        return True
+
+    def only_classic_authentication_vserver_global_default_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound at the Authentication vserver
+        and classic or advanced policies are bound at the global default
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if bind_point not in authentication_ssl_vserver:
+                return False
+            if self._bind_info[bind_point]["advanced"]:
+                return False
+        return True
+
+    def only_classic_gslb_vserver_global_default_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound at the GSLB vserver
+        and classic or advanced policies are bound at the global default
+        """
+        if self._global_override_bindings_exists:
+            return False
+
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if bind_point not in gslb_ssl_vserver:
+                return False
+            if self._bind_info[bind_point]["advanced"]:
+                return False
+        return True
+
+    def only_classic_global_bindings_exists(self):
+        """
+        Returns True iff classic policies are bound only at the global level
+        """
+        for bind_point in self._bind_info:
+            if bind_point == "":
+                continue
+            if self._bind_info[bind_point]["classic"]:
+                return False
+        return True
 
 @common.register_class_methods
 class SureConnect(ConvertConfig):
@@ -2753,6 +3601,8 @@ class SureConnect(ConvertConfig):
     @common.register_for_cmd("add", "sc", "policy")
     @common.register_for_cmd("set", "sc", "parameter")
     def convert_policy(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         logging.error(("SureConnect feature command [{}] conversion "
                        "is not supported, please do the conversion "
                        "manually").format(str(commandParseTree).strip()))
@@ -2766,6 +3616,8 @@ class PriorityQueuing(ConvertConfig):
     """
     @common.register_for_cmd("add", "pq", "policy")
     def convert_policy(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         logging.error(("PriorityQueuing feature command [{}] conversion "
                        "is not supported, please do the conversion "
                        "manually").format(str(commandParseTree).strip()))
@@ -2779,6 +3631,8 @@ class HDoSP(ConvertConfig):
     """
     @common.register_for_cmd("add", "dos", "policy")
     def convert_policy(self, commandParseTree):
+        if no_conversion_collect_data:
+            return []
         logging.error(("HDoSP feature command [{}] conversion "
                        "is not supported, please do the conversion "
                        "manually").format(str(commandParseTree).strip()))
@@ -2791,14 +3645,13 @@ class NSFeatures(ConvertConfig):
 
     @common.register_for_cmd("enable", "ns", "feature")
     def convert_ns_features(self, commandParseTree):
-        features_to_remove = ["SC", "PQ", "HDOSP", "CF"]
+        if no_conversion_collect_data:
+            return []
         num_of_enabled_features = commandParseTree.get_number_of_params()
         new_feature_command = CLICommand("enable", "ns", "feature")
         is_rewrite_feature_enabled = False
         is_responder_feature_enabled = False
-        is_appqoe_feature_enabled = False
         enable_rw_responder_features = False
-        enable_appqoe_feature = False
         for inx in range(num_of_enabled_features):
             feature_node = commandParseTree.positional_value(inx)
             feature_name = feature_node.value
@@ -2806,15 +3659,16 @@ class NSFeatures(ConvertConfig):
                 is_rewrite_feature_enabled = True
             elif feature_name == "RESPONDER":
                 is_responder_feature_enabled = True
-            elif feature_name == "AppQoE":
-                is_appqoe_feature_enabled = True
 
             if feature_name == "CF":
                 enable_rw_responder_features = True
             elif feature_name in ["SC", "PQ", "HDOSP"]:
-                enable_appqoe_feature = True
+                logging.error("Conversion of SC, PQ and HDOSP"
+                    " features are not supported in command"
+                    " [{}]".format(str(commandParseTree).strip()))
+                return [commandParseTree]
 
-            if feature_name not in features_to_remove:
+            if feature_name != "CF":
                 new_feature_command.add_positional(feature_node)
 
         if enable_rw_responder_features:
@@ -2825,9 +3679,5 @@ class NSFeatures(ConvertConfig):
             if not is_responder_feature_enabled:
                 pos = CLIPositionalParameter("RESPONDER")
                 new_feature_command.add_positional(pos)
-
-        if enable_appqoe_feature and not is_appqoe_feature_enabled:
-            pos = CLIPositionalParameter("AppQoE")
-            new_feature_command.add_positional(pos)
 
         return [new_feature_command]

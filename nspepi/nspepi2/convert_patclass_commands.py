@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -25,6 +25,8 @@ class PATCLASS(cli_cmds.ConvertConfig):
         Returns:
             tree: Processed command parse tree for add policy patclass command
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         patset_tree = CLICommand('add', 'policy', 'patset')
         name = CLIPositionalParameter(tree.positional_value(0).value)
         patset_tree.add_positional(name)
@@ -41,6 +43,8 @@ class PATCLASS(cli_cmds.ConvertConfig):
         Returns:
             tree: Processed command parse tree for bind policy patclass command
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         patset_tree = CLICommand('bind', 'policy', 'patset')
         name = CLIPositionalParameter(tree.positional_value(0).value)
         pattern = CLIPositionalParameter(tree.positional_value(1).value)

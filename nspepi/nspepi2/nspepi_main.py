@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2022 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -13,7 +13,7 @@ Dependency packages: PLY, pytest
 
 # Ensure that the version string conforms to PEP 440:
 # https://www.python.org/dev/peps/pep-0440/
-__version__ = "1.0"
+__version__ = "1.1"
 
 import argparse
 import glob
@@ -33,6 +33,8 @@ from convert_classic_expr import convert_classic_expr, \
 import nspepi_common as common
 
 import convert_cli_commands
+
+handle_default_config = False
 
 # Log handlers that need to be saved from call to call
 file_log_handler = None
@@ -160,32 +162,80 @@ def convert_config_file(infile, outfile, verbose):
     for m in common.init_methods:
         m.method(m.obj)
     lineno = 0
-    for cmd in infile:
-        lineno += 1
-        parsed_tree = cli_yacc.cli_yacc_parse(cmd, lineno)
-        if parsed_tree is not None:
-            # construct dictionary key to look up registered method to call to
-            # parse and transform the command to be emitted
-            # Registered method can return either string or tree.
-            key = " ".join(parsed_tree.get_command_type()).lower()
-            if key in common.dispatchtable:
-                for m in common.dispatchtable[key]:
-                    for output in m.method(m.obj, parsed_tree):
-                        output_line(str(output), outfile, verbose)
+    if handle_default_config:
+        default_cmds = [
+                "set cmp parameter",
+        ]
+        default_cmds_handled = False
+        convert_cli_commands.no_conversion_collect_data = False
+        for cmd in infile:
+            # Remove default_cmds_handled check when more than
+            # one default commands need to handle
+            if not default_cmds_handled:
+                lineno += 1
+                parsed_tree = cli_yacc.cli_yacc_parse(cmd, lineno)
+                if parsed_tree is not None:
+                    # construct dictionary key to look up registered method to call to
+                    # parse and transform the command to be emitted
+                    # Registered method can return either string or tree.
+                    key = " ".join(parsed_tree.get_command_type()).lower()
+                    if key in default_cmds:
+                        for m in common.dispatchtable[key]:
+                            for output in m.method(m.obj, parsed_tree):
+                                output_line(str(output), outfile, verbose)
+                        default_cmds_handled = True
+                    else:
+                        output_line(str(parsed_tree), outfile, verbose)
             else:
                 output_line(str(parsed_tree), outfile, verbose)
-        else:
-            output_line(cmd, outfile, verbose)
-    # call methods registered to be called at end of processing
-    for m in common.final_methods:
-        for output in m.method(m.obj):
+    else:
+        for cmd in infile:
+            lineno += 1
+            parsed_tree = cli_yacc.cli_yacc_parse(cmd, lineno)
+            if parsed_tree is not None:
+                # construct dictionary key to look up registered method to call to
+                # parse and transform the command to be emitted
+                # Registered method can return either string or tree.
+                key = " ".join(parsed_tree.get_command_type()).lower()
+                if key in common.dispatchtable:
+                    for m in common.dispatchtable[key]:
+                        m.method(m.obj, parsed_tree)
+
+        infile.seek(0)
+        convert_cli_commands.NamedExpression.add_reference_named_exprs()
+        convert_cli_commands.no_conversion_collect_data = False
+        while convert_cli_commands.policy_entities_names:
+            convert_cli_commands.policy_entities_names.pop()
+        while convert_cli_commands.classic_entities_names:
+            convert_cli_commands.classic_entities_names.pop()
+        convert_cli_commands.NamedExpression.register_built_in_named_exprs()
+        lineno = 0
+        for cmd in infile:
+            lineno += 1
+            parsed_tree = cli_yacc.cli_yacc_parse(cmd, lineno)
+            if parsed_tree is not None:
+                # construct dictionary key to look up registered method to call to
+                # parse and transform the command to be emitted
+                # Registered method can return either string or tree.
+                key = " ".join(parsed_tree.get_command_type()).lower()
+                if key in common.dispatchtable:
+                    for m in common.dispatchtable[key]:
+                        for output in m.method(m.obj, parsed_tree):
+                            output_line(str(output), outfile, verbose)
+                else:
+                    output_line(str(parsed_tree), outfile, verbose)
+            else:
+                output_line(cmd, outfile, verbose)
+        # call methods registered to be called at end of processing
+        for m in common.final_methods:
+            for output in m.method(m.obj):
+                output_line(str(output), outfile, verbose)
+        # analyze policy bindings for any unsupported bindings
+        common.pols_binds.analyze()
+        # Get all bind commands after reprioritizing.
+        config_obj = convert_cli_commands.ConvertConfig()
+        for output in config_obj.reprioritize_and_emit_binds():
             output_line(str(output), outfile, verbose)
-    # analyze policy bindings for any unsupported bindings
-    common.pols_binds.analyze()
-    # Get all bind commands after reprioritizing.
-    config_obj = convert_cli_commands.ConvertConfig()
-    for output in config_obj.reprioritize_and_emit_binds():
-        output_line(str(output), outfile, verbose)
 
 
 def main():
@@ -247,6 +297,7 @@ def main():
     convert_cli_commands.convert_cli_init()
     # convert classic policy expression if given as an argument
     if args.expression is not None:
+        convert_cli_commands.no_conversion_collect_data = False
         # Check that given argument value is not a command
         if re.search(r'^\s*((add)|(set)|(bind))\s+[a-zA-Z]', args.expression, re.IGNORECASE):
             print("Error: argument e: Make sure argument value "
@@ -264,6 +315,7 @@ def main():
             print(output)
     # convert ns config file
     elif args.infile is not None:
+        convert_cli_commands.parsing_config_file = True
         new_path = os.path.join(conf_file_path, "new_" + conf_file_name)
         if not os.path.exists(args.infile):
             print("\nInput file " + args.infile + " does not exist")

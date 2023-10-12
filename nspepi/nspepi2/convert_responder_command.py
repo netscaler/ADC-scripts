@@ -31,6 +31,10 @@ class Responder(cli_cmds.ConvertConfig):
         """
         add responder action <name> <type> <target>
         """
+        if cli_cmds.no_conversion_collect_data:
+            tree = Responder.convert_adv_expr_list(
+                	tree, [2, "reasonPhrase", "headers"])
+            return []
         action_name = tree.positional_value(0).value.lower()
         action_type = tree.positional_value(1).value.lower()
         # If action is noop, then don't return action 
@@ -52,6 +56,9 @@ class Responder(cli_cmds.ConvertConfig):
         Saved policy name in policy_list.
         add responder policy <name> <rule> <action>
         """
+        if cli_cmds.no_conversion_collect_data:
+            tree = Responder.convert_adv_expr_list(tree, [1])
+            return []
         policy_name = tree.positional_value(0).value
         policy_action = tree.positional_value(2).value.lower()
         if (policy_action in self._noop_action_list):
@@ -77,6 +84,8 @@ class Responder(cli_cmds.ConvertConfig):
               HTTP/SSL vservers
         tree - bind command parse tree
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         # If no filter policy is configured, then no need to process
         # responder bindings
         if not cli_cmds.filter_policy_exists:
@@ -91,10 +100,8 @@ class Responder(cli_cmds.ConvertConfig):
         position = "inplace"
         bind_type_to_check = ["REQ_OVERRIDE", "REQ_DEFAULT"]
         if get_bind_type in bind_type_to_check:
-            if (policy_name.lower() not in self._terminating_policy_list):
-                 # Set below flags only if added vserver is of HTTP/SSL protocol
-                 if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
-                     Responder.resp_global_goto_exists = True
+            if get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"):
+                Responder.resp_global_goto_exists = True
             self.convert_global_bind(
                 tree, tree, policy_name, module, priority_arg, goto_arg, position)
             return []
@@ -112,6 +119,8 @@ class Responder(cli_cmds.ConvertConfig):
         When responder policy is bound:
         1. Check if GOTO is END/USE_INVOCATION_RESULT for HTTP/SSL vservers
         """
+        if cli_cmds.no_conversion_collect_data:
+            return []
         # If no filter policy is configured, then no need to process
         # responder bindings
         if not cli_cmds.filter_policy_exists:
@@ -126,9 +135,8 @@ class Responder(cli_cmds.ConvertConfig):
         goto_arg = "gotoPriorityExpression"
         if cli_cmds.vserver_protocol_dict[vs_name] in ("HTTP", "SSL"):
             # Set below flags only if vserver is of ptotocol HTTP/SSL
-            if ((policy_name.lower() not in self._terminating_policy_list) and
-                (get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT"))):
-                 Responder.resp_vserver_goto_exists = True
+            if (get_goto_arg.upper() in ("END", "USE_INVOCATION_RESULT")):
+                Responder.resp_vserver_goto_exists = True
 
             if not bind_parse_tree.keyword_exists('type'):
                 keyword_arg = CLIKeywordParameter(CLIKeywordName('type'))

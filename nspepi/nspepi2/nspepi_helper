@@ -154,6 +154,20 @@ my %EXPR_LIST=(
     "TIME "                                 ,       'Type=11;expr=SYS.TIME',
     "URLTOKENS"                             ,       'Type=15;expr=HTTP.REQ.URL.SET_TEXT_MODE(NOURLENCODED)',
     "REQ.HTTP.URLTOKENS"                    ,       'Type=15;expr=HTTP.REQ.URL.SET_TEXT_MODE(NOURLENCODED)',
+    "FS\.COMMAND"                           ,       'Type=16;expr=invalid',
+    "FS\.DIR"                               ,       'Type=16;expr=invalid',
+    "FS\.DOMAIN"                            ,       'Type=16;expr=invalid',
+    "FS\.FILE"                              ,       'Type=16;expr=invalid',
+    "FS\.PATH"                              ,       'Type=16;expr=invalid',
+    "FS\.SERVER"                            ,       'Type=16;expr=invalid',
+    "FS\.SERVERIP"                          ,       'Type=16;expr=invalid',
+    "FS\.SERVICE"                           ,       'Type=16;expr=invalid',
+    "FS\.USER"                              ,       'Type=16;expr=invalid',
+    "CLIENT\.APPLICATION"                   ,       'Type=17;expr=invalid',
+    "CLIENT\.FILE"                          ,       'Type=17;expr=invalid',
+    "CLIENT\.OS"                            ,       'Type=17;expr=invalid',
+    "CLIENT\.REG"                           ,       'Type=17;expr=invalid',
+    "CLIENT\.SVC"                           ,       'Type=17;expr=invalid',
 );
 
 # List of classic expressions that are not convertable
@@ -305,7 +319,7 @@ sub convertExpression
     }
     # Check for client security expression expressions
     foreach (@CSEC_BLOCKED_LIST) {
-        if ($expression  =~ /\b$_/i) {
+        if ($expression  =~ /^\b$_/i) {
             print_it($LFILE,"$line\n");
             err_handle $ERR_CSEC_BLOCKED_MSG;
             return;
@@ -313,7 +327,7 @@ sub convertExpression
     }
     # Check for file system based expression expressions
     foreach (@FILE_BLOCKED_LIST) {
-        if ($expression  =~ /\b$_/i) {
+        if ($expression  =~ /^\b$_/i) {
             print_it($LFILE,"$line\n");
             err_handle $ERR_FILE_BLOCKED_MSG;
             return;
@@ -321,7 +335,7 @@ sub convertExpression
     }
     # Check for blocked expressions
     foreach (@BLOCKED_LIST) {
-        if ($expression  =~ /\b$_/i) {
+        if ($expression  =~ /^\b$_/i) {
             my $err_msg = "Conversion of $_ expression is not supported";
             print_it($LFILE,"$line\n");
             err_handle $err_msg;
@@ -830,7 +844,7 @@ sub identifyExpressions
                     parseNumericOperator($OPERATOR,$ARG);
                     return;
                 } elsif ($ARG =~ /^\S{3} (\S{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/) {
-                    # Handling asctime format: Tue Nov 4 08:12:31 1994 GMT
+                    # Handling asctime format: Tue Nov 4 08:12:31 1994
                     $ARG = "GMT $6 $1 $2 $3h $4m $5s";
                     parseNumericOperator($OPERATOR,$ARG);
                     return;
@@ -909,6 +923,14 @@ sub identifyExpressions
                 err_handle $ERR_SYNTAX_MSG;
                 return;
             }
+        }
+        case 16 {
+                err_handle $ERR_FILE_BLOCKED_MSG;
+                return;
+        }
+        case 17 {
+                err_handle $ERR_CSEC_BLOCKED_MSG;
+                return;
         }
     }
 }
