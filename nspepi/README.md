@@ -26,10 +26,12 @@ The following tools help with the conversion:
 
 For using the conversion tools, copy the files from here to your Citrix ADC appliance as per the instructions:
 
-1. Clone the repo `https://github.com/citrix/ADC-scripts.git` and goto `ADC-scripts/nspepi` directory.
+1. Clone the repo `https://github.com/netscaler/ADC-scripts.git` and goto `ADC-scripts/nspepi` directory.
 2. Copy `nspepi_install_script`, `nspepi`, and `check_invalid_config` files to the `/netscaler` path in Citrix ADC.
 3. Copy all files under the `nspepi2` directory to the `/netscaler/nspepi2` path in Citrix ADC.
 4. After copying files to Citrix ADC, change your directory to `/netscaler` and then run the `bash nspepi_install_script` command.
+
+Also, user can download the files using `https://github.com/netscaler/ADC-scripts/archive/refs/heads/master.zip` and use it.
 
 ### NSPEPI and check_invalid_config tools can be run on the CentOS and Ubuntu systems
 
@@ -44,14 +46,23 @@ The following modules are the prerequisites for using these tools:
 If python3 is installed, then please create a symbolic link for python like "ln -s /usr/bin/pytho3 /usr/bin/python".
 
 Commands to install pip, ply and Switch.pm modules in CentOS:
+
 sudo yum install -y perl-Switch
+
 sudo yum install python-pip
+
 sudo yum install python-ply
 
 Commands to install pip, ply and Switch.pm modules in Ubuntu:
+
 sudo apt install libswitch-perl
+
 sudo apt install python-ply
+
 sudo apt install python-pip
+
+`NOTE: In Linux system, after copying the tool files, user can directrly use the tools from the nspepi directory`
+
 
 ## Pre-validation tool for removed or deprecated features in Citrix ADC version 13.1
 
@@ -115,10 +126,31 @@ Parameters:
 **Note:** Either the `-f` or `-e` parameter must be specified to perform a conversion. Use of the `-d` parameter is intended for the Citrix support team to analyze for support purposes.
 
 The NSPEPI tool does not modify the input file. Instead, it generates two files with prefixes `new_` and `warn_` and they are put into the same directory as where the input configuration file is present. The file with the `new_ prefix` contains the converted configuration. And the file with `warn_ prefix` contains the warnings and errors. If there are any warnings or errors that got generated in the warn file, the errors must be fixed manually as part of the conversion process. Once converted, you must test the file in a test environment and then use it in the production environment to replace the actual `ns.conf` config file. After testing, you must reboot the appliance using the newly converted `ns.conf` config file.
+  
+### Commands or features handled by the NSPEPI conversion tool
+  
+  - The following classic policies are converted to advanced policies. These policies include conversion of entity bindings including global bindings.
+    - add appfw policy
+    - add cmp policy
+    - add cr policy
+    - add cs policy
+    - add ssl policy
+    - add filter policy
+    
+  - The rule parameter configured in `add lb vserver` is converted from classic expression to advanced expression.
+  - Filter feature (except the FORWARD type filter action)
+  - Named expressions (`add policy expression` commands). Each classic named policy expression which is being used in the features from which classic support is removed, is converted to its corresponding advanced named expression with `nspepi_adv_` set as the prefix. In addition, usage of named expressions for the converted classic expressions is changed to the corresponding advanced named expressions.
+  - The SPDY parameter configured in `add ns httpProfile` or `set ns httpProfile` command is changed to `-http2 ENABLED`.
+  - Patclass feature
+  - Pattern parameter in rewrite action
+  - SYS.EVAL_CLASSIC_EXPR is converted to the equivalent non-deprecated advanced expression. These expressions can be seen in any command where advanced expressions are allowed.
+  - Q and S prefixes of advanced expressions are converted to equivalent non-deprecated advanced expressions. These expressions can be seen in any command where advanced expressions are allowed. 
+
+For more information on the NSPEPI tool, see the [Citrix ADC documentation](https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html).
 
 ### Best Practices:
 - You must run the NSPEPI tool before upgrading to Citrix ADC release version 13.1.
-- The NSPEPI tool must be run on Citrix ADC release version 12.1 or 13.0.
+- The NSPEPI tool must be run on netscaler version 12.1 or 13.0.
 - For each different configuration that you need to convert:
    - Run this tool on your configuration in your existing system older than 13.1 version and do any manual changes to the output that are required.
    - Install the converted configuration on a suitable test system running on your existing Citrix ADC release version prior to 13.1 release.
@@ -202,24 +234,3 @@ Example output for -f parameter:
 
         Converted config will be available in a new file new_sample.conf.
         Check warn_sample.conf file for any warnings or errors that might have been generated.
-  
-### Commands or features handled by the NSPEPI conversion tool
-  
-  - The following classic policies are converted to advanced policies. These policies include conversion of entity bindings including global bindings.
-    - add appfw policy
-    - add cmp policy
-    - add cr policy
-    - add cs policy
-    - add tm sessionPolicy
-    - add tunnel trafficPolicy
-    
-  - The rule parameter configured in `add lb vserver` is converted from classic expression to advanced expression.
-  - Filter feature (except the FORWARD type filter action)
-  - Named expressions (`add policy expression` commands). Each classic named policy expression is converted to its corresponding advanced named expression with `nspepi_adv_` set as the prefix. In addition, usage of named expressions for the converted classic expressions is changed to the corresponding advanced named expressions. Also, every named expression has two named expressions, where one is classic and the other one is advanced.
-  - The SPDY parameter configured in `add ns httpProfile` or `set ns httpProfile` command is changed to `-http2 ENABLED`.
-  - Patclass feature
-  - Pattern parameter in rewrite action
-  - SYS.EVAL_CLASSIC_EXPR is converted to the equivalent non-deprecated advanced expression. These expressions can be seen in any command where advanced expressions are allowed.
-  - Q and S prefixes of advanced expressions are converted to equivalent non-deprecated advanced expressions. These expressions can be seen in any command where advanced expressions are allowed. 
-
-For more information on the NSPEPI tool, see the [Citrix ADC documentation](https://docs.citrix.com/en-us/citrix-adc/current-release/appexpert/policies-and-expressions/introduction-to-policies-and-exp/converting-policy-expressions-nspepi-tool.html).
