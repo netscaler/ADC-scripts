@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2023 Citrix Systems, Inc. All rights reserved.
+# Copyright 2021-2024 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -1222,7 +1222,7 @@ class Responder(CheckConfig):
         if commandParseTree.invalid:
             return [commandParseTree]
         action_type = commandParseTree.positional_value(1).value.lower()
-        if action_type is "noop":
+        if action_type == "noop":
             logging.warning("NOOP action type is deprecated"
                 " for command [{}]".format(str(commandParseTree).strip()))
         return []

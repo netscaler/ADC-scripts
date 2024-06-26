@@ -108,6 +108,10 @@ The following is an example when the configuration file does not contain any dep
 
 The `NSPEPI` tool helps in converting the deprecated commands or features to the Citrix recommended alternatives.
 
+**Latest version:**   1.2
+
+**NOTE:** It is recommended to always use the latest version for the conversion, you can check the version using `nspepi --version` command.
+
 ### Running the NSPEPI tool
 
 This tool needs to be run from the command line of the shell (you should type the `shell` command on the Citrix ADC CLI).

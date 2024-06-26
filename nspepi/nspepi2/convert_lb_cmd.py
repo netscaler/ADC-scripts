@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2023 Citrix Systems, Inc. All rights reserved.
+# Copyright 2021-2024 Citrix Systems, Inc. All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -140,8 +140,9 @@ class LB(cli_cmds.ConvertConfig):
                 else:
                     # CONTENTS exists but not a simple expression.
                     # Throw error and don't convert.
-                    logging.error(("-rule in the following command has to be "
+                    logging.error(("Line({}): -rule in the following command has to be "
                                   "converted manually: {}").format(
+                                  str(add_lbvserver_parse_tree.lineno),
                                   str(add_lbvserver_parse_tree).strip()))
                 return [add_lbvserver_parse_tree]
 
@@ -176,7 +177,7 @@ class LB(cli_cmds.ConvertConfig):
             if len(removed_keywords) > 0:
                 removed_keywords.append("rule")
                 add_lbvserver_parse_tree.remove_keyword("rule")
-                logging.warning(("-rule classic expression results in boolean "
+                logging.warning(("Line({}): -rule classic expression results in boolean "
                                  "value. The equivalent advanced expression "
                                  "will result boolean value in string "
                                  "format. This will result in functionality "
@@ -184,7 +185,7 @@ class LB(cli_cmds.ConvertConfig):
                                  " or lbMethod. To aviod the functionality "
                                  "change, {} command is modified by removing "
                                  "the following keywords: {}.").format(
-                                 str(original_tree).strip(),
+                                 str(original_tree.lineno), str(original_tree).strip(),
                                  ", ".join(removed_keywords)))
         return [add_lbvserver_parse_tree]
 

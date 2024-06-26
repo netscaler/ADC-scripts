@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2024 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -220,14 +220,14 @@ class CMP(cli_cmds.ConvertConfig):
                 bind_cmd_tree.keyword_value("state")[0].value.lower() == \
                 "disabled":
             logging.warning((
-                "Following bind command is commented out because"
+                "Line({}): Following bind command is commented out because"
                 " state is disabled. If state is disabled, then command"
                 " is not in use. Since state parameter is not supported"
                 " with the advanced configuration, so if we convert this"
                 " config then functionality will change. If command is"
                 " required please take a backup because comments will"
                 " not be saved in ns.conf after triggering 'save ns config': {}").
-                format(str(bind_cmd_tree).strip())
+                format(str(bind_cmd_tree.lineno), str(bind_cmd_tree).strip())
             )
             return ["#" + str(bind_cmd_tree)]
 
