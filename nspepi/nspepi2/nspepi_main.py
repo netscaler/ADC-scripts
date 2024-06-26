@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2021-2023 Citrix Systems, Inc.  All rights reserved.
+# Copyright 2021-2024 Citrix Systems, Inc.  All rights reserved.
 # Use of this software is governed by the license terms, if any,
 # which accompany or are included with this software.
 
@@ -13,7 +13,7 @@ Dependency packages: PLY, pytest
 
 # Ensure that the version string conforms to PEP 440:
 # https://www.python.org/dev/peps/pep-0440/
-__version__ = "1.1"
+__version__ = "1.2"
 
 import argparse
 import glob
@@ -221,7 +221,13 @@ def convert_config_file(infile, outfile, verbose):
                 if key in common.dispatchtable:
                     for m in common.dispatchtable[key]:
                         for output in m.method(m.obj, parsed_tree):
-                            output_line(str(output), outfile, verbose)
+                            if (type(output) == str):
+                                output_line(output, outfile, verbose)
+                            else:
+                                if output.invalid:
+                                    output_line((str(output).strip() + convert_cli_commands.tool_error_comment), outfile, verbose)
+                                else:
+                                    output_line(str(output), outfile, verbose)
                 else:
                     output_line(str(parsed_tree), outfile, verbose)
             else:
@@ -229,13 +235,25 @@ def convert_config_file(infile, outfile, verbose):
         # call methods registered to be called at end of processing
         for m in common.final_methods:
             for output in m.method(m.obj):
-                output_line(str(output), outfile, verbose)
+                if (type(output) == str):
+                    output_line(str(output), outfile, verbose)
+                else:
+                    if output.invalid:
+                        output_line(str(output).strip() + convert_cli_commands.tool_error_comment, outfile, verbose)
+                    else:
+                        output_line(str(output), outfile, verbose)
         # analyze policy bindings for any unsupported bindings
         common.pols_binds.analyze()
         # Get all bind commands after reprioritizing.
         config_obj = convert_cli_commands.ConvertConfig()
         for output in config_obj.reprioritize_and_emit_binds():
-            output_line(str(output), outfile, verbose)
+            if (type(output) == str):
+                output_line(str(output), outfile, verbose)
+            else:
+                if output.invalid:
+                    output_line(str(output).strip() + convert_cli_commands.tool_error_comment, outfile, verbose)
+                else:
+                    output_line(str(output), outfile, verbose)
 
 
 def main():
@@ -295,6 +313,7 @@ def main():
     # For other options, logs will only be in warn file and not on console.
     setup_logging(log_file_name, logging.WARNING, err_file_name, debug_file_name, args.verbose or args.expression is not None)
     convert_cli_commands.convert_cli_init()
+    convert_cli_commands.tool_error_comment = " # Error in conversion in using nspepi tool, for details see the warn_" + conf_file_name + "\n"
     # convert classic policy expression if given as an argument
     if args.expression is not None:
         convert_cli_commands.no_conversion_collect_data = False
@@ -331,7 +350,9 @@ def main():
                     os.remove(log_file_name)
                 else:
                     error_warn_msg = ".\nCheck warn_" + conf_file_name + \
-                        " file for all warnings or errors that have been generated."
+                        " file for all warnings or errors that have been generated." + \
+                        "\nPlease try to convert the errors manually or reach out to " + \
+                        "the support team for helping in conversion."
                 print("\nConverted config will be available in a new file new_"
                       + conf_file_name + error_warn_msg) 
                 if args.debug:
