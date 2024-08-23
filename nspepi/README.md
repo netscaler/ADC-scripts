@@ -43,7 +43,7 @@ The following modules are the prerequisites for using these tools:
 - Ply module for Python
 - Switch.pm for Perl
 
-If python3 is installed, then please create a symbolic link for python like "ln -s /usr/bin/pytho3 /usr/bin/python".
+If python3 is installed, then please create a symbolic link for python like "ln -s /usr/bin/python3 /usr/bin/python".
 
 Commands to install pip, ply and Switch.pm modules in CentOS:
 
